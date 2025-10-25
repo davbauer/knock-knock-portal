@@ -14,8 +14,8 @@ RUN corepack enable
 # Copy package files
 COPY frontend/package.json frontend/yarn.lock ./
 
-# Install dependencies
-RUN corepack install && yarn install
+# Install Yarn version from packageManager field and install dependencies
+RUN yarn install
 
 # Copy frontend source
 COPY frontend/ ./
