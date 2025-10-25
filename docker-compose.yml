@@ -1,21 +1,68 @@
+# Docker Compose for Knock-Knock Portal
 version: "3.8"
 
 services:
   knock-knock-portal:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
+    image: knock-knock-portal:latest
     container_name: knock-knock-portal
-    ports:
-      - "8000:8000" # API port
-      - "8080:8080" # Example proxied port
-    volumes:
-      - ./backend/config.yml:/app/config.yml
-      - ./backend/.env:/app/.env
-    environment:
-      - LOG_LEVEL=info
-      - LOG_FORMAT=json
     restart: unless-stopped
+    
+    ports:
+      # Admin/Portal API
+      - "8000:8000"
+      # Example proxy services (adjust based on your config.yml)
+      - "8080:8080"  # Service 1
+      - "8081:8081"  # Service 2
+      # Add more as needed: "8082:8082", etc.
+    
+    volumes:
+      # Mount your configuration file (read-only for security)
+      - ./backend/config.yml:/app/config/config.yml:ro
+      # Optional: Mount logs directory for persistence
+      - ./logs:/app/logs
+    
+    environment:
+      # REQUIRED: Set these in a .env file (never commit to git!)
+      - ADMIN_PASSWORD_BCRYPT_HASH=${ADMIN_PASSWORD_BCRYPT_HASH}
+      - JWT_SIGNING_SECRET_KEY=${JWT_SIGNING_SECRET_KEY}
+      
+      # Optional: Timezone
+      - TZ=UTC
+      
+      # Optional: Gin mode (release/debug)
+      - GIN_MODE=release
+    
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
     networks:
       - knock-knock-network
 
