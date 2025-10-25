@@ -1,8 +1,6 @@
 services:
   knock-knock-portal:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/davbauer/knock-knock-portal:sha-1a60e60
     ports:
       - "8000:8000"
       - "8080-8099:8080-8099"
