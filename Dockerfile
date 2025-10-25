@@ -83,4 +83,3 @@ ENV GIN_MODE=release \
     TZ=UTC
 
 ENTRYPOINT ["/app/knock-knock"]
-```
