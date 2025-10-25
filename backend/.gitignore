@@ -28,3 +28,6 @@ config.yml
 # OS
 .DS_Store
 Thumbs.db
+
+
+dist_frontend/

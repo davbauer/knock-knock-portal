@@ -161,6 +161,33 @@ func (l *Loader) startFileWatcher() error {
 	return watcher.Add(l.configFilePath)
 }
 
+// SaveConfig saves the configuration to file
+func (l *Loader) SaveConfig(cfg *ApplicationConfig) error {
+	// Validate before saving
+	if err := ValidateConfig(cfg); err != nil {
+		return fmt.Errorf("config validation failed: %w", err)
+	}
+
+	// Marshal to YAML
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config to YAML: %w", err)
+	}
+
+	// Write to file
+	if err := os.WriteFile(l.configFilePath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	// Update in-memory config
+	l.configMutex.Lock()
+	l.config = cfg
+	l.configMutex.Unlock()
+
+	log.Info().Msg("Configuration saved successfully")
+	return nil
+}
+
 // Close closes the config loader and file watcher
 func (l *Loader) Close() error {
 	close(l.stopChan)

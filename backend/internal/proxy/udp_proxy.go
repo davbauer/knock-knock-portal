@@ -23,6 +23,7 @@ type UDPProxy struct {
 	sessions         map[string]*udpSession
 	sessionsMu       sync.RWMutex
 	sessionTimeout   time.Duration
+	maxSessions      int32 // Maximum allowed concurrent sessions
 	packetCount      int64
 	mu               sync.Mutex
 }
@@ -31,12 +32,13 @@ type UDPProxy struct {
 type udpSession struct {
 	clientAddr   *net.UDPAddr
 	backendConn  *net.UDPConn
+	backendAddr  *net.UDPAddr // Expected backend address for validation
 	lastActivity time.Time
 	mu           sync.Mutex
 }
 
 // NewUDPProxy creates a new UDP proxy
-func NewUDPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipallowlist.Manager, sessionTimeout time.Duration) *UDPProxy {
+func NewUDPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipallowlist.Manager, sessionTimeout time.Duration, maxSessions int) *UDPProxy {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &UDPProxy{
 		service:          service,
@@ -45,6 +47,7 @@ func NewUDPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipall
 		cancel:           cancel,
 		sessions:         make(map[string]*udpSession),
 		sessionTimeout:   sessionTimeout,
+		maxSessions:      int32(maxSessions),
 	}
 }
 
@@ -65,10 +68,10 @@ func (p *UDPProxy) Start() error {
 	p.conn = conn
 
 	log.Info().
-		Str("service", p.service.ServiceName).
-		Str("listen", listenAddr).
-		Str("backend", fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPortStart)).
-		Msg("UDP proxy started")
+		Str("service_id", p.service.ServiceID).
+		Int("proxy_port", p.service.ProxyListenPortStart).
+		Str("backend", fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPort)).
+		Msg("Starting UDP proxy listener")
 
 	p.wg.Add(2)
 	go p.receiveLoop()
@@ -135,15 +138,19 @@ func (p *UDPProxy) receiveLoop() {
 		// Get or create session
 		session, err := p.getOrCreateSession(clientAddr)
 		if err != nil {
-			log.Error().
+			log.Warn().
 				Err(err).
 				Str("client_addr", clientAddr.String()).
-				Msg("Failed to create UDP session")
+				Str("service", p.service.ServiceName).
+				Msg("Failed to create UDP session (may have hit session limit)")
 			continue
 		}
 
 		// Forward packet to backend
-		go p.forwardToBackend(session, buffer[:n])
+		// CRITICAL: Copy the data to avoid race condition since buffer is reused
+		packetData := make([]byte, n)
+		copy(packetData, buffer[:n])
+		go p.forwardToBackend(session, packetData)
 	}
 }
 
@@ -162,8 +169,17 @@ func (p *UDPProxy) getOrCreateSession(clientAddr *net.UDPAddr) (*udpSession, err
 		return session, nil
 	}
 
+	// Check session limit before creating new session
+	p.sessionsMu.RLock()
+	currentSessions := int32(len(p.sessions))
+	p.sessionsMu.RUnlock()
+
+	if currentSessions >= p.maxSessions {
+		return nil, fmt.Errorf("maximum sessions (%d) reached", p.maxSessions)
+	}
+
 	// Create new session
-	backendAddr := fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPortStart)
+	backendAddr := fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPort)
 	backendUDPAddr, err := net.ResolveUDPAddr("udp", backendAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve backend address: %w", err)
@@ -177,6 +193,7 @@ func (p *UDPProxy) getOrCreateSession(clientAddr *net.UDPAddr) (*udpSession, err
 	session = &udpSession{
 		clientAddr:   clientAddr,
 		backendConn:  backendConn,
+		backendAddr:  backendUDPAddr,
 		lastActivity: time.Now(),
 	}
 
@@ -188,6 +205,7 @@ func (p *UDPProxy) getOrCreateSession(clientAddr *net.UDPAddr) (*udpSession, err
 		Str("client_addr", clientAddr.String()).
 		Str("backend_addr", backendAddr).
 		Str("service", p.service.ServiceName).
+		Int("active_sessions", int(currentSessions)+1).
 		Msg("Created UDP session")
 
 	// Start receiving responses from backend
@@ -224,12 +242,13 @@ func (p *UDPProxy) receiveFromBackend(session *udpSession) {
 
 		session.mu.Lock()
 		conn := session.backendConn
+		expectedBackend := session.backendAddr
 		session.mu.Unlock()
 
 		// Set read deadline
 		conn.SetReadDeadline(time.Now().Add(p.sessionTimeout))
 
-		n, err := conn.Read(buffer)
+		n, addr, err := conn.ReadFromUDP(buffer)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				// Session timed out, will be cleaned up
@@ -240,6 +259,17 @@ func (p *UDPProxy) receiveFromBackend(session *udpSession) {
 				Str("client_addr", session.clientAddr.String()).
 				Msg("Failed to read from backend")
 			return
+		}
+
+		// SECURITY: Validate response is from expected backend to prevent amplification attacks
+		if addr.String() != expectedBackend.String() {
+			log.Warn().
+				Str("expected_backend", expectedBackend.String()).
+				Str("actual_source", addr.String()).
+				Str("client_addr", session.clientAddr.String()).
+				Str("service", p.service.ServiceName).
+				Msg("UDP response from unexpected source - possible spoofing/amplification attack attempt")
+			continue // Drop the packet
 		}
 
 		// Update activity time
@@ -355,9 +385,10 @@ func (p *UDPProxy) GetStats() map[string]interface{} {
 	return map[string]interface{}{
 		"total_packets":   packetCount,
 		"active_sessions": sessionCount,
+		"max_sessions":    p.maxSessions,
 		"service_name":    p.service.ServiceName,
 		"listen_port":     p.service.ProxyListenPortStart,
-		"backend_addr":    fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPortStart),
+		"backend_addr":    fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPort),
 		"session_timeout": p.sessionTimeout.String(),
 	}
 }

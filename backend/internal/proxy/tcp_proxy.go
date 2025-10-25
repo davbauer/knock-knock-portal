@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/davbauer/knock-knock-portal/internal/config"
@@ -23,17 +24,20 @@ type TCPProxy struct {
 	wg               sync.WaitGroup
 	activeConns      sync.WaitGroup
 	connCount        int64
+	activeConnCount  int32 // Current active connections
+	maxConns         int32 // Maximum allowed concurrent connections
 	mu               sync.Mutex
 }
 
 // NewTCPProxy creates a new TCP proxy
-func NewTCPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipallowlist.Manager) *TCPProxy {
+func NewTCPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipallowlist.Manager, maxConnections int) *TCPProxy {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &TCPProxy{
 		service:          service,
 		allowlistManager: allowlistManager,
 		ctx:              ctx,
 		cancel:           cancel,
+		maxConns:         int32(maxConnections),
 	}
 }
 
@@ -49,10 +53,10 @@ func (p *TCPProxy) Start() error {
 	p.listener = listener
 
 	log.Info().
-		Str("service", p.service.ServiceName).
-		Str("listen", listenAddr).
-		Str("backend", fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPortStart)).
-		Msg("TCP proxy started")
+		Str("service_id", p.service.ServiceID).
+		Int("proxy_port", p.service.ProxyListenPortStart).
+		Str("backend", fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPort)).
+		Msg("Starting TCP proxy listener")
 
 	p.wg.Add(1)
 	go p.acceptLoop()
@@ -76,6 +80,19 @@ func (p *TCPProxy) acceptLoop() {
 			}
 		}
 
+		// Check connection limit
+		currentConns := atomic.LoadInt32(&p.activeConnCount)
+		if currentConns >= p.maxConns {
+			log.Warn().
+				Int32("current", currentConns).
+				Int32("max", p.maxConns).
+				Str("service", p.service.ServiceName).
+				Msg("Maximum connections reached, rejecting new connection")
+			conn.Close()
+			continue
+		}
+
+		atomic.AddInt32(&p.activeConnCount, 1)
 		p.activeConns.Add(1)
 		go p.handleConnection(conn)
 	}
@@ -83,7 +100,10 @@ func (p *TCPProxy) acceptLoop() {
 
 // handleConnection handles a single TCP connection
 func (p *TCPProxy) handleConnection(clientConn net.Conn) {
-	defer p.activeConns.Done()
+	defer func() {
+		p.activeConns.Done()
+		atomic.AddInt32(&p.activeConnCount, -1)
+	}()
 	defer clientConn.Close()
 
 	// Extract client IP
@@ -108,7 +128,7 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 	}
 
 	// Connect to backend
-	backendAddr := fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPortStart)
+	backendAddr := net.JoinHostPort(p.service.BackendTargetHost, fmt.Sprintf("%d", p.service.BackendTargetPort))
 	backendConn, err := net.DialTimeout("tcp", backendAddr, 10*time.Second)
 	if err != nil {
 		log.Error().
@@ -196,9 +216,11 @@ func (p *TCPProxy) GetStats() map[string]interface{} {
 	defer p.mu.Unlock()
 
 	return map[string]interface{}{
-		"total_connections": p.connCount,
-		"service_name":      p.service.ServiceName,
-		"listen_port":       p.service.ProxyListenPortStart,
-		"backend_addr":      fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPortStart),
+		"total_connections":  p.connCount,
+		"active_connections": atomic.LoadInt32(&p.activeConnCount),
+		"max_connections":    p.maxConns,
+		"service_name":       p.service.ServiceName,
+		"listen_port":        p.service.ProxyListenPortStart,
+		"backend_addr":       fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPort),
 	}
 }

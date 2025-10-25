@@ -80,6 +80,7 @@ func (h *PortalLoginHandler) Handle(c *gin.Context) {
 	}
 
 	if user == nil {
+		h.rateLimiter.RecordFailure(clientIP.String())
 		c.JSON(401, models.NewErrorResponse("Invalid username or password", "INVALID_CREDENTIALS"))
 		log.Warn().
 			Str("username", req.Username).
@@ -90,6 +91,7 @@ func (h *PortalLoginHandler) Handle(c *gin.Context) {
 
 	// Verify password
 	if err := h.passwordVerifier.VerifyUserPassword(req.Password, user.BcryptHashedPassword); err != nil {
+		h.rateLimiter.RecordFailure(clientIP.String())
 		c.JSON(401, models.NewErrorResponse("Invalid username or password", "INVALID_CREDENTIALS"))
 		log.Warn().
 			Str("username", req.Username).
@@ -97,6 +99,9 @@ func (h *PortalLoginHandler) Handle(c *gin.Context) {
 			Msg("Login attempt with invalid password")
 		return
 	}
+
+	// Record successful authentication to reset rate limit backoff
+	h.rateLimiter.RecordSuccess(clientIP.String())
 
 	// Create session
 	sess, err := h.sessionManager.CreateSession(

@@ -58,12 +58,16 @@ func (h *AdminLoginHandler) Handle(c *gin.Context) {
 
 	// Verify admin password
 	if err := h.passwordVerifier.VerifyAdminPassword(req.AdminPassword); err != nil {
+		h.rateLimiter.RecordFailure(clientIP.String())
 		c.JSON(401, models.NewErrorResponse("Invalid admin password", "INVALID_CREDENTIALS"))
 		log.Warn().
 			Str("client_ip", clientIP.String()).
 			Msg("Failed admin login attempt")
 		return
 	}
+
+	// Record successful authentication to reset rate limit backoff
+	h.rateLimiter.RecordSuccess(clientIP.String())
 
 	// Generate JWT token (24 hours)
 	tokenDuration := 24 * time.Hour

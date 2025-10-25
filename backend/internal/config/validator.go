@@ -81,19 +81,11 @@ func ValidateConfig(cfg *ApplicationConfig) error {
 		}
 
 		// Backend port validation
-		if service.BackendTargetPortStart < 1 || service.BackendTargetPortStart > 65535 {
-			return fmt.Errorf("service %s: invalid backend_target_port_start %d", service.ServiceID, service.BackendTargetPortStart)
+		if service.BackendTargetHost == "" {
+			return fmt.Errorf("service %s: backend_target_host is required", service.ServiceID)
 		}
-		if service.BackendTargetPortEnd < service.BackendTargetPortStart {
-			return fmt.Errorf("service %s: backend_target_port_end must be >= backend_target_port_start", service.ServiceID)
-		}
-
-		// Port range sizes must match
-		proxyRangeSize := service.ProxyListenPortEnd - service.ProxyListenPortStart + 1
-		backendRangeSize := service.BackendTargetPortEnd - service.BackendTargetPortStart + 1
-		if proxyRangeSize != backendRangeSize {
-			return fmt.Errorf("service %s: proxy and backend port range sizes must match (proxy: %d, backend: %d)",
-				service.ServiceID, proxyRangeSize, backendRangeSize)
+		if service.BackendTargetPort < 1 || service.BackendTargetPort > 65535 {
+			return fmt.Errorf("service %s: invalid backend_target_port %d", service.ServiceID, service.BackendTargetPort)
 		}
 
 		// Validate protocol

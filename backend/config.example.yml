@@ -48,8 +48,7 @@ protected_services:
     proxy_listen_port_start: 8080
     proxy_listen_port_end: 8080
     backend_target_host: "127.0.0.1"
-    backend_target_port_start: 9000
-    backend_target_port_end: 9000
+    backend_target_port: 9000
     transport_protocol: "tcp"
     is_http_protocol: false
     enabled: true

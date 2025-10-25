@@ -62,6 +62,9 @@ func (m *Manager) Start() error {
 		var proxy Proxy
 		var err error
 
+		// Get connection limit from config
+		maxConnections := cfg.ProxyServerConfig.MaxConnectionsPerService
+
 		// Create appropriate proxy type
 		if service.IsHTTPProtocol {
 			proxy, err = NewHTTPProxy(&cfg.ProtectedServices[i], m.allowlistManager)
@@ -73,11 +76,11 @@ func (m *Manager) Start() error {
 				continue
 			}
 		} else if service.TransportProtocol == "tcp" {
-			proxy = NewTCPProxy(&cfg.ProtectedServices[i], m.allowlistManager)
+			proxy = NewTCPProxy(&cfg.ProtectedServices[i], m.allowlistManager, maxConnections)
 		} else if service.TransportProtocol == "udp" {
 			// Get UDP session timeout from config
 			sessionTimeout := time.Duration(cfg.ProxyServerConfig.UDPSessionTimeoutSeconds) * time.Second
-			proxy = NewUDPProxy(&cfg.ProtectedServices[i], m.allowlistManager, sessionTimeout)
+			proxy = NewUDPProxy(&cfg.ProtectedServices[i], m.allowlistManager, sessionTimeout, maxConnections)
 		} else if service.TransportProtocol == "both" {
 			log.Warn().
 				Str("service", service.ServiceName).
@@ -191,8 +194,8 @@ func (m *Manager) validateService(service *config.ProtectedServiceConfig) error 
 		return fmt.Errorf("invalid proxy_listen_port_start: %d", service.ProxyListenPortStart)
 	}
 
-	if service.BackendTargetPortStart < 1 || service.BackendTargetPortStart > 65535 {
-		return fmt.Errorf("invalid backend_target_port_start: %d", service.BackendTargetPortStart)
+	if service.BackendTargetPort < 1 || service.BackendTargetPort > 65535 {
+		return fmt.Errorf("invalid backend_target_port: %d", service.BackendTargetPort)
 	}
 
 	if service.BackendTargetHost == "" {

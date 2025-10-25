@@ -29,7 +29,7 @@ type HTTPProxy struct {
 
 // NewHTTPProxy creates a new HTTP reverse proxy
 func NewHTTPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipallowlist.Manager) (*HTTPProxy, error) {
-	backendURL, err := url.Parse(fmt.Sprintf("http://%s:%d", service.BackendTargetHost, service.BackendTargetPortStart))
+	backendURL, err := url.Parse(fmt.Sprintf("http://%s:%d", service.BackendTargetHost, service.BackendTargetPort))
 	if err != nil {
 		return nil, fmt.Errorf("invalid backend URL: %w", err)
 	}
@@ -67,10 +67,10 @@ func (p *HTTPProxy) Start() error {
 	}
 
 	log.Info().
-		Str("service", p.service.ServiceName).
-		Str("listen", listenAddr).
-		Str("backend", fmt.Sprintf("http://%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPortStart)).
-		Msg("HTTP proxy started")
+		Str("service_id", p.service.ServiceID).
+		Int("proxy_port", p.service.ProxyListenPortStart).
+		Str("backend", fmt.Sprintf("http://%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPort)).
+		Msg("Starting HTTP proxy listener")
 
 	p.wg.Add(1)
 	go func() {
@@ -171,8 +171,8 @@ func (p *HTTPProxy) Stop() error {
 	return nil
 }
 
-// GetStats returns proxy statistics
-func (p *HTTPProxy) GetStats() map[string]interface{} {
+// GetStats returns statistics about the HTTP proxy
+func (p *HTTPProxy) GetStats() map[string]interface{}{
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -180,6 +180,6 @@ func (p *HTTPProxy) GetStats() map[string]interface{} {
 		"total_requests": p.requestCount,
 		"service_name":   p.service.ServiceName,
 		"listen_port":    p.service.ProxyListenPortStart,
-		"backend_addr":   fmt.Sprintf("http://%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPortStart),
+		"backend_addr":   fmt.Sprintf("http://%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPort),
 	}
 }

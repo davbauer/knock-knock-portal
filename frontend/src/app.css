@@ -1,3 +1,73 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
+
+@theme {
+	/* Light mode (default) */
+	--color-base-100: #ffffff;
+	--color-base-200: #fafafa;
+	--color-base-300: #f4f4f5;
+	--color-base-content: #18181b;
+	--color-base-muted: #71717a;
+	
+	--color-primary: #2563eb;
+	--color-primary-hover: #1d4ed8;
+	--color-primary-content: #ffffff;
+	
+	--color-success: #16a34a;
+	--color-success-content: #ffffff;
+	
+	--color-error: #dc2626;
+	--color-error-hover: #b91c1c;
+	--color-error-content: #ffffff;
+	
+	--color-border: #e4e4e7;
+	--color-border-hover: #d4d4d8;
+}
+
+/* Dark theme overrides */
+.dark,
+[data-theme='dark'] {
+	--color-base-100: #09090b;
+	--color-base-200: #18181b;
+	--color-base-300: #27272a;
+	--color-base-content: #fafafa;
+	--color-base-muted: #a1a1aa;
+	
+	--color-primary: #3b82f6;
+	--color-primary-hover: #60a5fa;
+	
+	--color-success: #22c55e;
+	
+	--color-error: #ef4444;
+	--color-error-hover: #f87171;
+	
+	--color-border: #3f3f46;
+	--color-border-hover: #52525b;
+}
+
+/* System preference dark mode */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme]) {
+		--color-base-100: #09090b;
+		--color-base-200: #18181b;
+		--color-base-300: #27272a;
+		--color-base-content: #fafafa;
+		--color-base-muted: #a1a1aa;
+		
+		--color-primary: #3b82f6;
+		--color-primary-hover: #60a5fa;
+		
+		--color-success: #22c55e;
+		
+		--color-error: #ef4444;
+		--color-error-hover: #f87171;
+		
+		--color-border: #3f3f46;
+		--color-border-hover: #52525b;
+	}
+}
+
+
+
+

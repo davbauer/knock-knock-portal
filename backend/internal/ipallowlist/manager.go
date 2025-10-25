@@ -18,6 +18,7 @@ type Manager struct {
 	matcher        *Matcher
 	dnsResolver    *DNSResolver
 	config         *config.NetworkAccessControlConfig
+	sessionIPIndex sync.Map // map[sessionID]string (sessionID -> IP) for O(1) removal
 	ctx            context.Context
 	cancel         context.CancelFunc
 }
@@ -138,17 +139,32 @@ func (m *Manager) AddSessionIP(sessionID string, ip netip.Addr, expiresAt time.T
 		ExpiresAt:  &expiresAt,
 	}
 
-	m.exactIPEntries.Store(ip.String(), entry)
+	ipStr := ip.String()
+	m.exactIPEntries.Store(ipStr, entry)
+	m.sessionIPIndex.Store(sessionID, ipStr) // Add to index for O(1) removal
 
 	log.Info().
 		Str("session_id", sessionID).
-		Str("ip", ip.String()).
+		Str("ip", ipStr).
 		Time("expires_at", expiresAt).
 		Msg("Added session IP to allowlist")
 }
 
 // RemoveSessionIP removes a session-based IP from the allowlist
 func (m *Manager) RemoveSessionIP(sessionID string) {
+	// O(1) lookup using index instead of O(n) iteration
+	if ipValue, ok := m.sessionIPIndex.Load(sessionID); ok {
+		ipStr := ipValue.(string)
+		m.exactIPEntries.Delete(ipStr)
+		m.sessionIPIndex.Delete(sessionID)
+		log.Debug().
+			Str("session_id", sessionID).
+			Str("ip", ipStr).
+			Msg("Removed session IP from allowlist")
+		return
+	}
+
+	// Fallback: if not in index, search (shouldn't happen in normal operation)
 	m.exactIPEntries.Range(func(key, value interface{}) bool {
 		entry := value.(*Entry)
 		if entry.SourceType == EntryTypeSession && entry.SessionID == sessionID {
@@ -156,7 +172,7 @@ func (m *Manager) RemoveSessionIP(sessionID string) {
 			log.Debug().
 				Str("session_id", sessionID).
 				Str("ip", entry.IPAddress.String()).
-				Msg("Removed session IP from allowlist")
+				Msg("Removed session IP from allowlist (fallback path)")
 		}
 		return true
 	})
@@ -167,11 +183,13 @@ func (m *Manager) IsIPAllowed(ip netip.Addr) (allowed bool, reason string) {
 	// Fast path: exact IP lookup
 	if value, ok := m.exactIPEntries.Load(ip.String()); ok {
 		entry := value.(*Entry)
-		if !entry.IsExpired() {
+		if entry.IsExpired() {
+			// Remove expired entry in background to avoid blocking
+			go m.exactIPEntries.Delete(ip.String())
+			// Continue to check CIDR ranges
+		} else {
 			return true, string(entry.SourceType)
 		}
-		// Remove expired entry
-		m.exactIPEntries.Delete(ip.String())
 	}
 
 	// Slow path: CIDR range matching
