@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -56,7 +57,14 @@ func (l *Loader) reload() error {
 	data, err := os.ReadFile(l.configFilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Warn().Str("path", l.configFilePath).Msg("Config file not found, using defaults")
+			log.Warn().Str("path", l.configFilePath).Msg("Config file not found, creating with defaults")
+			
+			// Create config file with defaults
+			if err := l.createDefaultConfigFile(cfg); err != nil {
+				log.Warn().Err(err).Msg("Failed to create default config file, continuing with in-memory defaults")
+			} else {
+				log.Info().Str("path", l.configFilePath).Msg("Config file created with default values")
+			}
 		} else {
 			return fmt.Errorf("failed to read config file: %w", err)
 		}
@@ -80,6 +88,30 @@ func (l *Loader) reload() error {
 	l.configMutex.Unlock()
 
 	log.Info().Msg("Configuration loaded successfully")
+	return nil
+}
+
+// createDefaultConfigFile creates a config file with default values
+func (l *Loader) createDefaultConfigFile(cfg *ApplicationConfig) error {
+	// Ensure the directory exists
+	dir := filepath.Dir(l.configFilePath)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create config directory: %w", err)
+		}
+	}
+
+	// Marshal config to YAML
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config to YAML: %w", err)
+	}
+
+	// Write to file
+	if err := os.WriteFile(l.configFilePath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
 	return nil
 }
 
