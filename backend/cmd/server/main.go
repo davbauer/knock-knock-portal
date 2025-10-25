@@ -13,6 +13,7 @@ import (
 	"github.com/davbauer/knock-knock-portal/internal/auth"
 	"github.com/davbauer/knock-knock-portal/internal/config"
 	"github.com/davbauer/knock-knock-portal/internal/ipallowlist"
+	"github.com/davbauer/knock-knock-portal/internal/proxy"
 	"github.com/davbauer/knock-knock-portal/internal/session"
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog"
@@ -75,6 +76,15 @@ func main() {
 	allowlistManager := ipallowlist.NewManager(&cfg.NetworkAccessControl)
 	defer allowlistManager.Close()
 
+	// Initialize proxy manager
+	proxyManager := proxy.NewManager(configLoader, allowlistManager)
+	
+	// Start proxy services
+	if err := proxyManager.Start(); err != nil {
+		log.Error().Err(err).Msg("Failed to start proxy manager (continuing anyway)")
+	}
+	defer proxyManager.Stop()
+
 	// Setup API router
 	router := api.NewRouter(
 		configLoader,
@@ -108,10 +118,17 @@ func main() {
 
 	log.Info().Msg("Shutting down server...")
 
-	// Graceful shutdown with 5 second timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Graceful shutdown with 30 second timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	
+	// Stop proxies first
+	log.Info().Msg("Stopping proxy services...")
+	if err := proxyManager.Stop(); err != nil {
+		log.Error().Err(err).Msg("Error stopping proxy manager")
+	}
 
+	// Then stop API server
 	if err := server.Shutdown(ctx); err != nil {
 		log.Error().Err(err).Msg("Server forced to shutdown")
 	}
