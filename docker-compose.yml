@@ -10,12 +10,12 @@ services:
     environment:
       # Default password: admin123 (change in production!)
       # The $$ escapes the $ character in docker-compose
-      ADMIN_PASSWORD_BCRYPT_HASH: '$$2y$$12$$iDQ8Gc/g4x0e0qK.CSLLOuhq4m6KIt6J4hRpVrcDvtsfGy/NV431q'
-      JWT_SIGNING_SECRET_KEY: 'change-me-use-openssl-rand-base64-32-in-production'
-      LOG_LEVEL: 'info'
-      LOG_FORMAT: 'json'
+      ADMIN_PASSWORD_BCRYPT_HASH: "$$2y$$12$$iDQ8Gc/g4x0e0qK.CSLLOuhq4m6KIt6J4hRpVrcDvtsfGy/NV431q"
+      JWT_SIGNING_SECRET_KEY: "change-me-use-openssl-rand-base64-32-in-production"
+      LOG_LEVEL: "info"
+      LOG_FORMAT: "json"
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:8000/api/health']
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 3s
       start_period: 5s
