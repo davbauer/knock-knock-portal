@@ -4,10 +4,7 @@
 	import { X, Plus, Check } from 'lucide-svelte';
 	import { configStore } from './configStore.svelte';
 	import { toaster } from './toastStore.svelte';
-
-	function generateUUID(): string {
-		return crypto.randomUUID();
-	}
+	import { generateUUID } from '$lib/utils/uuid';
 
 	interface Props {
 		config: Config;
