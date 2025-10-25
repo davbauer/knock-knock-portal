@@ -23,7 +23,11 @@ Secure authentication gateway with session-based IP allowlisting for your servic
    ```bash
    cp .env.example .env
    # Add your secrets to .env
-   # Edit backend/config.yml for your services
+   
+   # Create config directory
+   mkdir -p config
+   cp backend/config.example.yml config/config.yml
+   # Edit config/config.yml for your services
    ```
 
 4. **Run**

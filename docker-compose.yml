@@ -1,22 +1,20 @@
 services:
   knock-knock-portal:
-    image: ghcr.io/davbauer/knock-knock-portal:sha-1a60e60
+    image: 'ghcr.io/davbauer/knock-knock-portal:main-amd64'
     ports:
-      - "8000:8000"
-      - "8080-8099:8080-8099"
+      - '8000:8000'
+      - '8080-8099:8080-8099'
     volumes:
-      - ./backend/config.yml:/app/config/config.yml:ro
-      - ./logs:/app/logs
+      - 'config:/app/config'
+      - 'logs:/app/logs'
     environment:
-      - ADMIN_PASSWORD_BCRYPT_HASH=${ADMIN_PASSWORD_BCRYPT_HASH}
-      - JWT_SIGNING_SECRET_KEY=${JWT_SIGNING_SECRET_KEY}
-      - CONFIG_FILE_PATH=/app/config/config.yml
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - 'ADMIN_PASSWORD_BCRYPT_HASH=${ADMIN_PASSWORD_BCRYPT_HASH}'
+      - 'JWT_SIGNING_SECRET_KEY=${JWT_SIGNING_SECRET_KEY}'
+      - 'LOG_LEVEL=info'
+      - 'LOG_FORMAT=json'
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/app/knock-knock", "--health-check"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
+
+volumes:
+  config:
+  logs:
+
