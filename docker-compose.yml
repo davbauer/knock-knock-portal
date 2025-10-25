@@ -8,8 +8,8 @@ services:
       - 'config:/app/config'
       - 'logs:/app/logs'
     environment:
-      - 'ADMIN_PASSWORD_BCRYPT_HASH=${ADMIN_PASSWORD_BCRYPT_HASH}'
-      - 'JWT_SIGNING_SECRET_KEY=${JWT_SIGNING_SECRET_KEY}'
+      - 'ADMIN_PASSWORD_BCRYPT_HASH=$2y$10$GVQ34hD1M7R0jlOMdn4eRueTB/JRQVZB07Arw3iN9/NTFs.RMAZBe'
+      - 'JWT_SIGNING_SECRET_KEY=change-me-use-openssl-rand-base64-32-in-production'
       - 'LOG_LEVEL=info'
       - 'LOG_FORMAT=json'
     restart: unless-stopped

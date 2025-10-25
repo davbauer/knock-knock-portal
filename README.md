@@ -10,32 +10,39 @@ Secure authentication gateway with session-based IP allowlisting for your servic
    cd knock-knock-portal
    ```
 
-2. **Create secrets**
-   ```bash
-   # Generate admin password hash
-   htpasswd -bnBC 12 "" yourpassword | tr -d ':\n'
-   
-   # Generate JWT secret
-   openssl rand -base64 32
-   ```
-
-3. **Configure**
-   ```bash
-   cp .env.example .env
-   # Add your secrets to .env
-   
-   # Create config directory
-   mkdir -p config
-   cp backend/config.example.yml config/config.yml
-   # Edit config/config.yml for your services
-   ```
-
-4. **Run**
+2. **Run**
    ```bash
    docker-compose up -d
    ```
 
-Access portal at `http://localhost:8000`
+That's it! Access portal at `http://localhost:8000`
+
+**Default credentials:** admin / admin (CHANGE IN PRODUCTION!)
+
+### Production Setup
+
+For production, generate secure credentials:
+
+```bash
+# Generate admin password hash
+htpasswd -bnBC 12 "" yourpassword | tr -d ':\n'
+
+# Generate JWT secret
+openssl rand -base64 32
+```
+
+Create `.env` file:
+```bash
+cp .env.example .env
+# Add your generated secrets to .env
+```
+
+Create config:
+```bash
+mkdir -p config
+cp backend/config.example.yml config/config.yml
+# Edit config/config.yml for your services
+```
 
 ## Docker Images
 
