@@ -33,9 +33,9 @@ func NewHTTPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipal
 	if err != nil {
 		return nil, fmt.Errorf("invalid backend URL: %w", err)
 	}
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	hp := &HTTPProxy{
 		service:          service,
 		allowlistManager: allowlistManager,
@@ -43,21 +43,21 @@ func NewHTTPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipal
 		cancel:           cancel,
 		proxy:            httputil.NewSingleHostReverseProxy(backendURL),
 	}
-	
+
 	// Customize the reverse proxy
 	hp.proxy.ErrorHandler = hp.errorHandler
 	hp.proxy.ModifyResponse = hp.modifyResponse
-	
+
 	return hp, nil
 }
 
 // Start begins the HTTP proxy server
 func (p *HTTPProxy) Start() error {
 	listenAddr := fmt.Sprintf(":%d", p.service.ProxyListenPortStart)
-	
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", p.handleRequest)
-	
+
 	p.server = &http.Server{
 		Addr:         listenAddr,
 		Handler:      mux,
@@ -65,13 +65,13 @@ func (p *HTTPProxy) Start() error {
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
-	
+
 	log.Info().
 		Str("service", p.service.ServiceName).
 		Str("listen", listenAddr).
 		Str("backend", fmt.Sprintf("http://%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPortStart)).
 		Msg("HTTP proxy started")
-	
+
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
@@ -79,7 +79,7 @@ func (p *HTTPProxy) Start() error {
 			log.Error().Err(err).Msg("HTTP proxy server error")
 		}
 	}()
-	
+
 	return nil
 }
 
@@ -92,7 +92,7 @@ func (p *HTTPProxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid client address", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Check IP allowlist
 	allowed, reason := p.allowlistManager.IsIPAllowed(clientIP)
 	if !allowed {
@@ -105,13 +105,13 @@ func (p *HTTPProxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Access Denied", http.StatusForbidden)
 		return
 	}
-	
+
 	// Track request
 	p.mu.Lock()
 	p.requestCount++
 	reqID := p.requestCount
 	p.mu.Unlock()
-	
+
 	log.Info().
 		Int64("req_id", reqID).
 		Str("client_ip", clientIP.String()).
@@ -119,7 +119,7 @@ func (p *HTTPProxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		Str("path", r.URL.Path).
 		Str("service", p.service.ServiceName).
 		Msg("Proxying HTTP request")
-	
+
 	// Proxy the request
 	p.proxy.ServeHTTP(w, r)
 }
@@ -131,7 +131,7 @@ func (p *HTTPProxy) errorHandler(w http.ResponseWriter, r *http.Request, err err
 		Str("service", p.service.ServiceName).
 		Str("path", r.URL.Path).
 		Msg("HTTP proxy error")
-	
+
 	http.Error(w, "Bad Gateway", http.StatusBadGateway)
 }
 
@@ -146,13 +146,13 @@ func (p *HTTPProxy) Stop() error {
 	log.Info().
 		Str("service", p.service.ServiceName).
 		Msg("Stopping HTTP proxy")
-	
+
 	p.cancel()
-	
+
 	if p.server != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		
+
 		if err := p.server.Shutdown(ctx); err != nil {
 			log.Warn().
 				Err(err).
@@ -161,13 +161,13 @@ func (p *HTTPProxy) Stop() error {
 			return err
 		}
 	}
-	
+
 	p.wg.Wait()
-	
+
 	log.Info().
 		Str("service", p.service.ServiceName).
 		Msg("HTTP proxy stopped")
-	
+
 	return nil
 }
 
@@ -175,7 +175,7 @@ func (p *HTTPProxy) Stop() error {
 func (p *HTTPProxy) GetStats() map[string]interface{} {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	return map[string]interface{}{
 		"total_requests": p.requestCount,
 		"service_name":   p.service.ServiceName,

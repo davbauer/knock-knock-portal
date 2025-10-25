@@ -3,9 +3,9 @@ package handlers
 import (
 	"time"
 
-	"github.com/davbauer/knock-knock-portal/internal/models"
 	"github.com/davbauer/knock-knock-portal/internal/auth"
 	"github.com/davbauer/knock-knock-portal/internal/middleware"
+	"github.com/davbauer/knock-knock-portal/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )

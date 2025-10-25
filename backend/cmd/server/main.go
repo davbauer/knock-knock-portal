@@ -25,7 +25,7 @@ const Version = "1.0.0"
 func main() {
 	// Load .env file
 	_ = godotenv.Load() // Ignore error if .env doesn't exist
-	
+
 	// Setup logging
 	setupLogging()
 
@@ -78,7 +78,7 @@ func main() {
 
 	// Initialize proxy manager
 	proxyManager := proxy.NewManager(configLoader, allowlistManager)
-	
+
 	// Start proxy services
 	if err := proxyManager.Start(); err != nil {
 		log.Error().Err(err).Msg("Failed to start proxy manager (continuing anyway)")
@@ -121,7 +121,7 @@ func main() {
 	// Graceful shutdown with 30 second timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	// Stop proxies first
 	log.Info().Msg("Stopping proxy services...")
 	if err := proxyManager.Stop(); err != nil {

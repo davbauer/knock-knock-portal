@@ -19,7 +19,7 @@ type Entry struct {
 	IPAddress        netip.Addr
 	IPPrefix         *netip.Prefix // nil for exact IPs
 	SourceType       EntryType
-	SessionID        string     // Only for session entries
+	SessionID        string // Only for session entries
 	AddedAt          time.Time
 	ExpiresAt        *time.Time // nil for permanent/DNS entries
 	LastVerifiedAt   time.Time  // For DNS entries

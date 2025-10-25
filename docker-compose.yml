@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   knock-knock-portal:
@@ -7,8 +7,8 @@ services:
       dockerfile: Dockerfile
     container_name: knock-knock-portal
     ports:
-      - "8000:8000"      # API port
-      - "8080:8080"      # Example proxied port
+      - "8000:8000" # API port
+      - "8080:8080" # Example proxied port
     volumes:
       - ./backend/config.yml:/app/config.yml
       - ./backend/.env:/app/.env

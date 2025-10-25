@@ -40,30 +40,30 @@ func NewTCPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipall
 // Start begins listening and proxying connections
 func (p *TCPProxy) Start() error {
 	listenAddr := fmt.Sprintf(":%d", p.service.ProxyListenPortStart)
-	
+
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return fmt.Errorf("failed to start TCP listener on %s: %w", listenAddr, err)
 	}
-	
+
 	p.listener = listener
-	
+
 	log.Info().
 		Str("service", p.service.ServiceName).
 		Str("listen", listenAddr).
 		Str("backend", fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPortStart)).
 		Msg("TCP proxy started")
-	
+
 	p.wg.Add(1)
 	go p.acceptLoop()
-	
+
 	return nil
 }
 
 // acceptLoop accepts incoming connections
 func (p *TCPProxy) acceptLoop() {
 	defer p.wg.Done()
-	
+
 	for {
 		conn, err := p.listener.Accept()
 		if err != nil {
@@ -75,7 +75,7 @@ func (p *TCPProxy) acceptLoop() {
 				continue
 			}
 		}
-		
+
 		p.activeConns.Add(1)
 		go p.handleConnection(conn)
 	}
@@ -85,7 +85,7 @@ func (p *TCPProxy) acceptLoop() {
 func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 	defer p.activeConns.Done()
 	defer clientConn.Close()
-	
+
 	// Extract client IP
 	clientAddr := clientConn.RemoteAddr().(*net.TCPAddr)
 	clientIP, ok := parseIPFromAddr(clientAddr.IP.String())
@@ -95,7 +95,7 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 			Msg("Failed to parse client IP")
 		return
 	}
-	
+
 	// Check IP allowlist
 	allowed, reason := p.allowlistManager.IsIPAllowed(clientIP)
 	if !allowed {
@@ -106,7 +106,7 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 			Msg("Connection denied: IP not in allowlist")
 		return
 	}
-	
+
 	// Connect to backend
 	backendAddr := fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPortStart)
 	backendConn, err := net.DialTimeout("tcp", backendAddr, 10*time.Second)
@@ -118,35 +118,35 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 		return
 	}
 	defer backendConn.Close()
-	
+
 	log.Info().
 		Str("client_ip", clientIP.String()).
 		Str("service", p.service.ServiceName).
 		Str("backend", backendAddr).
 		Msg("Proxying TCP connection")
-	
+
 	// Track connection count
 	p.mu.Lock()
 	p.connCount++
 	connID := p.connCount
 	p.mu.Unlock()
-	
+
 	// Bidirectional copy
 	errChan := make(chan error, 2)
-	
+
 	go func() {
 		_, err := io.Copy(backendConn, clientConn)
 		errChan <- err
 	}()
-	
+
 	go func() {
 		_, err := io.Copy(clientConn, backendConn)
 		errChan <- err
 	}()
-	
+
 	// Wait for either direction to close
 	<-errChan
-	
+
 	log.Debug().
 		Int64("conn_id", connID).
 		Str("client_ip", clientIP.String()).
@@ -159,23 +159,23 @@ func (p *TCPProxy) Stop() error {
 	log.Info().
 		Str("service", p.service.ServiceName).
 		Msg("Stopping TCP proxy")
-	
+
 	p.cancel()
-	
+
 	if p.listener != nil {
 		p.listener.Close()
 	}
-	
+
 	// Wait for accept loop to stop
 	p.wg.Wait()
-	
+
 	// Wait for all active connections to finish (with timeout)
 	done := make(chan struct{})
 	go func() {
 		p.activeConns.Wait()
 		close(done)
 	}()
-	
+
 	select {
 	case <-done:
 		log.Info().
@@ -186,7 +186,7 @@ func (p *TCPProxy) Stop() error {
 			Str("service", p.service.ServiceName).
 			Msg("TCP proxy stopped with timeout (some connections may have been terminated)")
 	}
-	
+
 	return nil
 }
 
@@ -194,7 +194,7 @@ func (p *TCPProxy) Stop() error {
 func (p *TCPProxy) GetStats() map[string]interface{} {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	return map[string]interface{}{
 		"total_connections": p.connCount,
 		"service_name":      p.service.ServiceName,

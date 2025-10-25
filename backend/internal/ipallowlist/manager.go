@@ -25,7 +25,7 @@ type Manager struct {
 // NewManager creates a new IP allowlist manager
 func NewManager(cfg *config.NetworkAccessControlConfig) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	m := &Manager{
 		matcher:     NewMatcher(),
 		dnsResolver: NewDNSResolver(),

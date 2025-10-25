@@ -12,14 +12,14 @@ func parseIPFromAddr(addr string) (netip.Addr, bool) {
 	if err {
 		host = addr
 	}
-	
+
 	// Remove brackets from IPv6 addresses (e.g., "[::1]" -> "::1")
 	host = strings.Trim(host, "[]")
-	
+
 	ip, parseErr := netip.ParseAddr(host)
 	if parseErr != nil {
 		return netip.Addr{}, false
 	}
-	
+
 	return ip, true
 }

@@ -12,15 +12,15 @@ import (
 
 // Manager manages user sessions
 type Manager struct {
-	sessions             sync.Map // map[sessionID]*Session
-	sessionsByIP         sync.Map // map[string][]string (IP -> sessionIDs)
-	sessionsByUserID     sync.Map // map[string][]string (userID -> sessionIDs)
-	defaultDuration      time.Duration
-	maxDuration          *time.Duration
-	autoExtendEnabled    bool
-	cleanupInterval      time.Duration
-	cleanupTicker        *time.Ticker
-	stopChan             chan struct{}
+	sessions          sync.Map // map[sessionID]*Session
+	sessionsByIP      sync.Map // map[string][]string (IP -> sessionIDs)
+	sessionsByUserID  sync.Map // map[string][]string (userID -> sessionIDs)
+	defaultDuration   time.Duration
+	maxDuration       *time.Duration
+	autoExtendEnabled bool
+	cleanupInterval   time.Duration
+	cleanupTicker     *time.Ticker
+	stopChan          chan struct{}
 }
 
 // NewManager creates a new session manager

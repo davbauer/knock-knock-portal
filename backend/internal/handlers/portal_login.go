@@ -21,7 +21,7 @@ type PortalLoginRequest struct {
 
 // PortalLoginHandler handles portal user login
 type PortalLoginHandler struct {
-	configLoader   *config.Loader
+	configLoader     *config.Loader
 	passwordVerifier *auth.PasswordVerifier
 	jwtManager       *auth.JWTManager
 	sessionManager   *session.Manager
@@ -132,11 +132,11 @@ func (h *PortalLoginHandler) Handle(c *gin.Context) {
 		"jwt_access_token": token,
 		"token_expires_at": sess.ExpiresAt,
 		"session_info": map[string]interface{}{
-			"username":           user.Username,
-			"authenticated_ip":   clientIP.String(),
-			"expires_at":         sess.ExpiresAt,
+			"username":            user.Username,
+			"authenticated_ip":    clientIP.String(),
+			"expires_at":          sess.ExpiresAt,
 			"auto_extend_enabled": sess.AutoExtendEnabled,
-			"allowed_services":   allowedServices,
+			"allowed_services":    allowedServices,
 		},
 	}
 

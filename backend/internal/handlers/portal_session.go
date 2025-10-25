@@ -3,8 +3,8 @@ package handlers
 import (
 	"time"
 
-	"github.com/davbauer/knock-knock-portal/internal/models"
 	"github.com/davbauer/knock-knock-portal/internal/middleware"
+	"github.com/davbauer/knock-knock-portal/internal/models"
 	"github.com/davbauer/knock-knock-portal/internal/session"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -42,10 +42,10 @@ func (h *PortalSessionHandler) HandleStatus(c *gin.Context) {
 	}
 
 	response := map[string]interface{}{
-		"active":             !sess.IsExpired(),
-		"expires_in_seconds": int(expiresIn),
-		"authenticated_ip":   sess.ClientIPAddress.String(),
-		"allowed_services":   sess.AllowedServiceIDs,
+		"active":              !sess.IsExpired(),
+		"expires_in_seconds":  int(expiresIn),
+		"authenticated_ip":    sess.ClientIPAddress.String(),
+		"allowed_services":    sess.AllowedServiceIDs,
 		"auto_extend_enabled": sess.AutoExtendEnabled,
 	}
 

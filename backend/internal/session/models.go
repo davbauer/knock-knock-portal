@@ -7,16 +7,16 @@ import (
 
 // Session represents an authenticated user session
 type Session struct {
-	SessionID            string
-	UserID               string
-	Username             string
-	ClientIPAddress      netip.Addr
-	AllowedServiceIDs    []string // Empty = all services allowed
-	CreatedAt            time.Time
-	LastActivityAt       time.Time
-	ExpiresAt            time.Time
-	AutoExtendEnabled    bool
-	MaximumDuration      *time.Duration // nil = unlimited
+	SessionID         string
+	UserID            string
+	Username          string
+	ClientIPAddress   netip.Addr
+	AllowedServiceIDs []string // Empty = all services allowed
+	CreatedAt         time.Time
+	LastActivityAt    time.Time
+	ExpiresAt         time.Time
+	AutoExtendEnabled bool
+	MaximumDuration   *time.Duration // nil = unlimited
 }
 
 // IsExpired checks if the session is expired
@@ -39,7 +39,7 @@ func (s *Session) CanExtend() bool {
 // ExtendSession extends the session expiration time
 func (s *Session) ExtendSession(duration time.Duration) {
 	newExpiry := time.Now().Add(duration)
-	
+
 	// Check maximum duration limit
 	if s.MaximumDuration != nil {
 		maxExpiry := s.CreatedAt.Add(*s.MaximumDuration)
@@ -47,7 +47,7 @@ func (s *Session) ExtendSession(duration time.Duration) {
 			newExpiry = maxExpiry
 		}
 	}
-	
+
 	s.ExpiresAt = newExpiry
 	s.LastActivityAt = time.Now()
 }

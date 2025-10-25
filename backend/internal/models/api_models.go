@@ -9,8 +9,8 @@ type APIResponse struct {
 
 // ErrorResponse is the error response structure
 type ErrorResponse struct {
-	Message   string `json:"message"`
-	ErrorCode string `json:"error_code,omitempty"`
+	Message   string      `json:"message"`
+	ErrorCode string      `json:"error_code,omitempty"`
 	Data      interface{} `json:"data"`
 }
 

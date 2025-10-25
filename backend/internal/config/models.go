@@ -20,9 +20,9 @@ type SessionConfiguration struct {
 
 // NetworkAccessControlConfig defines IP allowlist settings
 type NetworkAccessControlConfig struct {
-	AllowedDynamicDNSHostnames   []string `yaml:"allowed_dynamic_dns_hostnames"`
-	PermanentlyAllowedIPRanges   []string `yaml:"permanently_allowed_ip_ranges"`
-	DNSRefreshIntervalSeconds    int      `yaml:"dns_refresh_interval_seconds"`
+	AllowedDynamicDNSHostnames []string `yaml:"allowed_dynamic_dns_hostnames"`
+	PermanentlyAllowedIPRanges []string `yaml:"permanently_allowed_ip_ranges"`
+	DNSRefreshIntervalSeconds  int      `yaml:"dns_refresh_interval_seconds"`
 }
 
 // ProxyServerConfiguration defines proxy server settings
@@ -45,28 +45,28 @@ type TrustedProxyConfiguration struct {
 
 // PortalUserAccount defines a user who can login to the portal
 type PortalUserAccount struct {
-	UserID                               string   `yaml:"user_id"`
-	Username                             string   `yaml:"username"`
-	DisplayUsernameInPublicSuggestions   bool     `yaml:"display_username_in_public_login_suggestions"`
-	BcryptHashedPassword                 string   `yaml:"bcrypt_hashed_password"`
-	AllowedServiceIDs                    []string `yaml:"allowed_service_ids"` // Empty = all
-	Notes                                string   `yaml:"notes"`
+	UserID                             string   `yaml:"user_id"`
+	Username                           string   `yaml:"username"`
+	DisplayUsernameInPublicSuggestions bool     `yaml:"display_username_in_public_login_suggestions"`
+	BcryptHashedPassword               string   `yaml:"bcrypt_hashed_password"`
+	AllowedServiceIDs                  []string `yaml:"allowed_service_ids"` // Empty = all
+	Notes                              string   `yaml:"notes"`
 }
 
 // ProtectedServiceConfig defines a service that requires authentication
 type ProtectedServiceConfig struct {
-	ServiceID             string              `yaml:"service_id"`
-	ServiceName           string              `yaml:"service_name"`
-	ProxyListenPortStart  int                 `yaml:"proxy_listen_port_start"`
-	ProxyListenPortEnd    int                 `yaml:"proxy_listen_port_end"`
-	BackendTargetHost     string              `yaml:"backend_target_host"`
-	BackendTargetPortStart int                `yaml:"backend_target_port_start"`
-	BackendTargetPortEnd  int                 `yaml:"backend_target_port_end"`
-	TransportProtocol     string              `yaml:"transport_protocol"` // tcp | udp | both
-	IsHTTPProtocol        bool                `yaml:"is_http_protocol"`
-	Enabled               bool                `yaml:"enabled"`
-	Description           string              `yaml:"description"`
-	HTTPConfig            *HTTPProtocolConfig `yaml:"http_config,omitempty"`
+	ServiceID              string              `yaml:"service_id"`
+	ServiceName            string              `yaml:"service_name"`
+	ProxyListenPortStart   int                 `yaml:"proxy_listen_port_start"`
+	ProxyListenPortEnd     int                 `yaml:"proxy_listen_port_end"`
+	BackendTargetHost      string              `yaml:"backend_target_host"`
+	BackendTargetPortStart int                 `yaml:"backend_target_port_start"`
+	BackendTargetPortEnd   int                 `yaml:"backend_target_port_end"`
+	TransportProtocol      string              `yaml:"transport_protocol"` // tcp | udp | both
+	IsHTTPProtocol         bool                `yaml:"is_http_protocol"`
+	Enabled                bool                `yaml:"enabled"`
+	Description            string              `yaml:"description"`
+	HTTPConfig             *HTTPProtocolConfig `yaml:"http_config,omitempty"`
 }
 
 // HTTPProtocolConfig defines HTTP-specific configuration
