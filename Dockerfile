@@ -28,8 +28,8 @@ RUN yarn build
 # ============================================================================
 FROM golang:1.24-alpine AS backend-builder
 
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /build/backend
 
