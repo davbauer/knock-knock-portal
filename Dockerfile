@@ -86,4 +86,3 @@ ENV GIN_MODE=release \
     TZ=UTC
 
 ENTRYPOINT ["/app/knock-knock"]
-CMD ["--config", "/app/config/config.yml"]

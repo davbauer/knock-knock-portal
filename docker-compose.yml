@@ -1,20 +1,21 @@
 services:
   knock-knock-portal:
-    image: 'ghcr.io/davbauer/knock-knock-portal:main-amd64'
+    # Use main-amd64 for Intel/AMD systems, main-arm64 for Apple Silicon
+    image: "ghcr.io/davbauer/knock-knock-portal:main-amd64"
     ports:
-      - '8000:8000'
-      - '8080-8099:8080-8099'
+      - "8000:8000"
+      - "8080-8099:8080-8099"
     volumes:
-      - 'config:/app/config'
-      - 'logs:/app/logs'
+      - "config:/app/config"
     environment:
-      ADMIN_PASSWORD_BCRYPT_HASH: '$2y$12$iDQ8Gc/g4x0e0qK.CSLLOuhq4m6KIt6J4hRpVrcDvtsfGy/NV431q'
-      JWT_SIGNING_SECRET_KEY: 'change-me-use-openssl-rand-base64-32-in-production'
-      LOG_LEVEL: 'info'
-      LOG_FORMAT: 'json'
+      # Default password: admin123 (change in production!)
+      # The $$ escapes the $ character in docker-compose
+      ADMIN_PASSWORD_BCRYPT_HASH: "$$2y$$12$$iDQ8Gc/g4x0e0qK.CSLLOuhq4m6KIt6J4hRpVrcDvtsfGy/NV431q"
+      JWT_SIGNING_SECRET_KEY: "change-me-use-openssl-rand-base64-32-in-production"
+      LOG_LEVEL: "info"
+      LOG_FORMAT: "json"
     restart: unless-stopped
 
 volumes:
   config:
   logs:
-

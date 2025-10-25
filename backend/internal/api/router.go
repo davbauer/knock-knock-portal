@@ -156,17 +156,19 @@ func (r *Router) setupSPAHandler() {
 	// Serve static assets from _app directory with long cache (immutable versioned assets)
 	r.engine.GET("/_app/*filepath", func(c *gin.Context) {
 		c.Header("Cache-Control", "public, max-age=31536000, immutable")
-		c.File(filepath.Join(staticPath, c.Request.URL.Path))
+		// Get the filepath parameter (without the leading /_app)
+		filePath := c.Param("filepath")
+		c.File(filepath.Join(staticPath, "_app", filePath))
 	})
 
 	// Catch-all route for SPA: try to serve static file, fallback to index.html
 	r.engine.NoRoute(func(c *gin.Context) {
 		// Clean and sanitize the requested path
 		requestPath := filepath.Clean(c.Request.URL.Path)
-		
+
 		// Build full file path
 		fullPath := filepath.Join(staticPath, requestPath)
-		
+
 		// Get absolute path and check it's within our static directory (prevent path traversal)
 		fullPathAbs, err := filepath.Abs(fullPath)
 		if err != nil || !strings.HasPrefix(fullPathAbs, staticPathAbs) {
@@ -197,7 +199,7 @@ func (r *Router) setupSPAHandler() {
 // computeIndexHash computes SHA256 hash of index.html on startup
 func (r *Router) computeIndexHash() {
 	indexPath := filepath.Join(".", "dist_frontend", "index.html")
-	
+
 	file, err := os.Open(indexPath)
 	if err != nil {
 		// index.html doesn't exist yet (maybe frontend not built) - use timestamp
@@ -222,13 +224,13 @@ func (r *Router) serveIndexWithHash(c *gin.Context, indexPath string) {
 	etag := `"` + r.indexHTMLHash + `"`
 	c.Header("ETag", etag)
 	c.Header("Cache-Control", "no-cache") // Allow caching but must revalidate with ETag
-	
+
 	// Check if client has current version
 	if c.GetHeader("If-None-Match") == etag {
 		c.Status(304) // Not Modified
 		return
 	}
-	
+
 	// Serve index.html
 	c.File(indexPath)
 }
