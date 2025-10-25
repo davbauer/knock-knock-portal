@@ -449,8 +449,12 @@
 												</div>
 											</td>
 											<td class="whitespace-nowrap px-6 py-4">
-												<div class="text-base-content font-mono text-sm">
-													{session.authenticated_ip}
+												<div class="text-base-content space-y-1 font-mono text-sm">
+													{#each session.authenticated_ips as ip}
+														<div class="flex items-center gap-2">
+															<span class="bg-base-300 rounded px-2 py-0.5">{ip}</span>
+														</div>
+													{/each}
 												</div>
 											</td>
 											<td class="whitespace-nowrap px-6 py-4">

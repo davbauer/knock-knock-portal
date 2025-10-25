@@ -23,7 +23,7 @@
 		session_id: string;
 		username: string;
 		user_id: string;
-		authenticated_ip: string;
+		authenticated_ips: string[];
 		created_at: string;
 		last_activity_at: string;
 		expires_at: string;
@@ -327,14 +327,18 @@
 								<div class="bg-primary/10 rounded-lg p-2">
 									<Globe class="text-primary h-5 w-5" />
 								</div>
-								<div>
-									<p class="text-base-muted text-xs font-medium uppercase tracking-wide">
-										Authenticated IP
-									</p>
-									<p class="text-base-content mt-0.5 font-mono text-sm font-semibold">
-										{sessionInfo.authenticated_ip}
-									</p>
+							<div>
+								<p class="text-base-muted text-xs font-medium uppercase tracking-wide">
+									Authenticated IPs
+								</p>
+								<div class="mt-0.5 space-y-1">
+									{#each sessionInfo.authenticated_ips as ip}
+										<div class="flex items-center gap-2">
+											<span class="bg-base-300 rounded px-2 py-0.5 font-mono text-sm text-base-content">{ip}</span>
+										</div>
+									{/each}
 								</div>
+							</div>
 							</div>
 						</div>
 

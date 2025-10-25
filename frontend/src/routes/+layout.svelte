@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { Sun, Moon, Monitor, Shield } from 'lucide-svelte';
 	import { themeStore } from '$lib/stores/theme.svelte';
+	import GlobalStatusIndicator from '$lib/components/GlobalStatusIndicator.svelte';
 
 	let { children } = $props();
 
@@ -26,6 +27,9 @@
 </script>
 
 <div class="bg-base-200 flex min-h-screen flex-col">
+	<!-- Global Status Indicator (always visible) -->
+	<GlobalStatusIndicator />
+
 	<!-- Header -->
 	<header class="border-border bg-base-100 border-b">
 		<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">

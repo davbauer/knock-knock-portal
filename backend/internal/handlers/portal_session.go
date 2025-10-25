@@ -39,6 +39,19 @@ func (h *PortalSessionHandler) HandleStatus(c *gin.Context) {
 		return
 	}
 
+	// Get client IP
+	clientIP, ok := middleware.GetClientIP(c)
+	if !ok || !clientIP.IsValid() {
+		c.JSON(400, models.NewErrorResponse("Could not determine client IP", "INVALID_IP"))
+		return
+	}
+
+		// Convert authenticated IP addresses to strings
+	ipStrings := make([]string, len(sess.AuthenticatedIPAddresses))
+	for i, ip := range sess.AuthenticatedIPAddresses {
+		ipStrings[i] = ip.String()
+	}
+
 	expiresIn := time.Until(sess.ExpiresAt).Seconds()
 	if expiresIn < 0 {
 		expiresIn = 0
@@ -53,7 +66,9 @@ func (h *PortalSessionHandler) HandleStatus(c *gin.Context) {
 			"session_id":          sess.SessionID,
 			"username":            sess.Username,
 			"user_id":             sess.UserID,
-			"authenticated_ip":    sess.ClientIPAddress.String(),
+			"authenticated_ips":   ipStrings,
+			"current_ip":          clientIP.String(),
+			"current_ip_allowed":  sess.IsIPAllowed(clientIP),
 			"created_at":          sess.CreatedAt,
 			"last_activity_at":    sess.LastActivityAt,
 			"expires_at":          sess.ExpiresAt,
@@ -107,4 +122,40 @@ func (h *PortalSessionHandler) HandleLogout(c *gin.Context) {
 	}
 
 	c.JSON(200, models.NewAPIResponse("Session terminated successfully", nil))
+}
+
+// HandleAddIP handles POST /api/portal/session/add-ip
+func (h *PortalSessionHandler) HandleAddIP(c *gin.Context) {
+	claims, ok := middleware.GetJWTClaims(c)
+	if !ok {
+		c.JSON(401, models.NewErrorResponse("Unauthorized", "UNAUTHORIZED"))
+		return
+	}
+
+	// Get client IP
+	clientIP, ok := middleware.GetClientIP(c)
+	if !ok || !clientIP.IsValid() {
+		c.JSON(400, models.NewErrorResponse("Could not determine client IP", "INVALID_IP"))
+		return
+	}
+
+	// Add IP to session
+	if err := h.sessionManager.AddIPToSession(claims.SessionID, clientIP); err != nil {
+		if err.Error() == "IP already exists in session" {
+			c.JSON(400, models.NewErrorResponse("IP already authorized for this session", "IP_ALREADY_EXISTS"))
+			return
+		}
+		c.JSON(400, models.NewErrorResponse(err.Error(), "ADD_IP_FAILED"))
+		return
+	}
+
+	log.Info().
+		Str("session_id", claims.SessionID).
+		Str("user_id", claims.UserID).
+		Str("new_ip", clientIP.String()).
+		Msg("User added new IP to session")
+
+	c.JSON(200, models.NewAPIResponse("IP address added to session", map[string]interface{}{
+		"added_ip": clientIP.String(),
+	}))
 }

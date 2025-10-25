@@ -506,7 +506,7 @@
 										class="bg-border data-[state=checked]:bg-primary relative h-6 w-11 rounded-full transition-colors"
 									>
 										<Switch.Thumb
-											class="data-[state=checked]:translate-x-5 absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform"
+											class="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform data-[state=checked]:translate-x-5"
 										/>
 									</Switch.Control>
 									<Switch.Label class="text-base-content cursor-pointer text-sm font-medium"

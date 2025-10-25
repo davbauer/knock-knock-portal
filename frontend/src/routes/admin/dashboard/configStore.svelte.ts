@@ -150,8 +150,36 @@ class ConfigStore {
 	async copyToClipboard(): Promise<{ success: boolean; error?: string }> {
 		try {
 			const json = this.exportToJSON();
-			await navigator.clipboard.writeText(json);
-			return { success: true };
+			
+			// Try modern clipboard API first
+			if (navigator.clipboard && navigator.clipboard.writeText) {
+				await navigator.clipboard.writeText(json);
+				return { success: true };
+			}
+			
+			// Fallback to execCommand for older browsers or non-secure contexts
+			const textArea = document.createElement('textarea');
+			textArea.value = json;
+			textArea.style.position = 'fixed';
+			textArea.style.left = '-999999px';
+			textArea.style.top = '-999999px';
+			document.body.appendChild(textArea);
+			textArea.focus();
+			textArea.select();
+			
+			try {
+				const successful = document.execCommand('copy');
+				document.body.removeChild(textArea);
+				
+				if (successful) {
+					return { success: true };
+				} else {
+					return { success: false, error: 'Copy command failed' };
+				}
+			} catch (err) {
+				document.body.removeChild(textArea);
+				throw err;
+			}
 		} catch (err) {
 			return {
 				success: false,

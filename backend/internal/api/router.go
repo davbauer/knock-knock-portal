@@ -82,9 +82,13 @@ func (r *Router) setupRoutes() {
 	// API routes group
 	api := r.engine.Group("/api")
 	{
-		// Health endpoint
+		// Health endpoint (service health only)
 		healthHandler := handlers.NewHealthHandler("1.0.0")
 		api.GET("/health", healthHandler.Handle)
+
+		// Connection info endpoint (public, returns client IP and allowlist status)
+		connectionInfoHandler := handlers.NewConnectionInfoHandler(r.allowlistManager)
+		api.GET("/connection-info", connectionInfoHandler.Handle)
 
 		// Portal API (public/authenticated)
 		portal := api.Group("/portal")
@@ -109,6 +113,7 @@ func (r *Router) setupRoutes() {
 			{
 				authenticated.GET("/session/status", sessionHandler.HandleStatus)
 				authenticated.POST("/session/logout", sessionHandler.HandleLogout)
+				authenticated.POST("/session/add-ip", sessionHandler.HandleAddIP)
 			}
 		}
 

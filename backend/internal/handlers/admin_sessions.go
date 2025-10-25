@@ -25,14 +25,20 @@ func (h *AdminSessionsHandler) HandleList(c *gin.Context) {
 
 	sessionList := []map[string]interface{}{}
 	for _, sess := range sessions {
+		// Convert IP addresses to strings
+		ipStrings := make([]string, len(sess.AuthenticatedIPAddresses))
+		for i, ip := range sess.AuthenticatedIPAddresses {
+			ipStrings[i] = ip.String()
+		}
+		
 		sessionList = append(sessionList, map[string]interface{}{
-			"session_id":       sess.SessionID,
-			"username":         sess.Username,
-			"user_id":          sess.UserID,
-			"authenticated_ip": sess.ClientIPAddress.String(),
-			"created_at":       sess.CreatedAt,
-			"expires_at":       sess.ExpiresAt,
-			"allowed_services": sess.AllowedServiceIDs,
+			"session_id":         sess.SessionID,
+			"username":           sess.Username,
+			"user_id":            sess.UserID,
+			"authenticated_ips":  ipStrings,
+			"created_at":         sess.CreatedAt,
+			"expires_at":         sess.ExpiresAt,
+			"allowed_services":   sess.AllowedServiceIDs,
 		})
 	}
 

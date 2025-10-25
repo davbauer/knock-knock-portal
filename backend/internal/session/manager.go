@@ -45,16 +45,16 @@ func (m *Manager) CreateSession(userID, username string, clientIP netip.Addr, al
 	now := time.Now()
 
 	session := &Session{
-		SessionID:         sessionID,
-		UserID:            userID,
-		Username:          username,
-		ClientIPAddress:   clientIP,
-		AllowedServiceIDs: allowedServiceIDs,
-		CreatedAt:         now,
-		LastActivityAt:    now,
-		ExpiresAt:         now.Add(m.defaultDuration),
-		AutoExtendEnabled: m.autoExtendEnabled,
-		MaximumDuration:   m.maxDuration,
+		SessionID:                sessionID,
+		UserID:                   userID,
+		Username:                 username,
+		AuthenticatedIPAddresses: []netip.Addr{clientIP}, // Start with initial IP
+		AllowedServiceIDs:        allowedServiceIDs,
+		CreatedAt:                now,
+		LastActivityAt:           now,
+		ExpiresAt:                now.Add(m.defaultDuration),
+		AutoExtendEnabled:        m.autoExtendEnabled,
+		MaximumDuration:          m.maxDuration,
 	}
 
 	// Store session
@@ -131,6 +131,38 @@ func (m *Manager) RecordActivity(sessionID string) error {
 	return nil
 }
 
+// AddIPToSession adds a new IP address to an existing session
+func (m *Manager) AddIPToSession(sessionID string, clientIP netip.Addr) error {
+	value, ok := m.sessions.Load(sessionID)
+	if !ok {
+		return fmt.Errorf("session not found")
+	}
+
+	session := value.(*Session)
+	if session.IsExpired() {
+		return fmt.Errorf("session expired")
+	}
+
+	// Add IP to session
+	if session.AddAllowedIP(clientIP) {
+		// Update session
+		m.sessions.Store(sessionID, session)
+		
+		// Add to IP index
+		m.addToIPIndex(clientIP.String(), sessionID)
+		
+		log.Info().
+			Str("session_id", sessionID).
+			Str("user_id", session.UserID).
+			Str("new_ip", clientIP.String()).
+			Msg("IP address added to session")
+		
+		return nil
+	}
+
+	return fmt.Errorf("IP already exists in session")
+}
+
 // TerminateSession terminates a session
 func (m *Manager) TerminateSession(sessionID string) error {
 	value, ok := m.sessions.Load(sessionID)
@@ -142,7 +174,12 @@ func (m *Manager) TerminateSession(sessionID string) error {
 
 	// Remove from all indices
 	m.sessions.Delete(sessionID)
-	m.removeFromIPIndex(session.ClientIPAddress.String(), sessionID)
+	
+	// Remove from IP index for all authenticated IPs
+	for _, ip := range session.AuthenticatedIPAddresses {
+		m.removeFromIPIndex(ip.String(), sessionID)
+	}
+	
 	m.removeFromUserIDIndex(session.UserID, sessionID)
 
 	log.Info().

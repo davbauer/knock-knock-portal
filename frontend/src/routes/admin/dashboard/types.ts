@@ -2,7 +2,7 @@ export interface Session {
 	session_id: string;
 	username: string;
 	user_id: string;
-	authenticated_ip: string;
+	authenticated_ips: string[];
 	created_at: string;
 	expires_at: string;
 	allowed_services: string[];
