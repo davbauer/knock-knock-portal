@@ -11,8 +11,9 @@ WORKDIR /build/frontend
 # Enable Corepack for Yarn
 RUN corepack enable
 
-# Copy package files and Yarn config
-COPY frontend/package.json frontend/yarn.lock frontend/.yarnrc.yml ./
+# Copy Yarn configuration and cache
+COPY frontend/.yarnrc.yml frontend/.yarn/ ./
+COPY frontend/package.json frontend/yarn.lock ./
 
 # Install Yarn version from packageManager field and install dependencies
 RUN yarn install
