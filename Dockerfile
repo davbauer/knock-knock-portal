@@ -58,7 +58,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
 FROM alpine:3.19
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata curl
 
 # Create non-root user
 RUN addgroup -g 1000 knockknock && \
@@ -79,10 +79,8 @@ USER knockknock
 
 EXPOSE 8000 8080-8099
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["/app/knock-knock", "--health-check"] || exit 1
-
 ENV GIN_MODE=release \
     TZ=UTC
 
 ENTRYPOINT ["/app/knock-knock"]
+```
