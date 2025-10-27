@@ -17,6 +17,9 @@
 	--color-success: #16a34a;
 	--color-success-content: #ffffff;
 	
+	--color-warning: #ea580c;
+	--color-warning-content: #ffffff;
+	
 	--color-error: #dc2626;
 	--color-error-hover: #b91c1c;
 	--color-error-content: #ffffff;
@@ -39,6 +42,8 @@
 	
 	--color-success: #22c55e;
 	
+	--color-warning: #f97316;
+	
 	--color-error: #ef4444;
 	--color-error-hover: #f87171;
 	
@@ -59,6 +64,8 @@
 		--color-primary-hover: #60a5fa;
 		
 		--color-success: #22c55e;
+		
+		--color-warning: #f97316;
 		
 		--color-error: #ef4444;
 		--color-error-hover: #f87171;
