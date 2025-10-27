@@ -13,6 +13,7 @@ import (
 	"github.com/davbauer/knock-knock-portal/internal/handlers"
 	"github.com/davbauer/knock-knock-portal/internal/ipallowlist"
 	"github.com/davbauer/knock-knock-portal/internal/middleware"
+	"github.com/davbauer/knock-knock-portal/internal/proxy"
 	"github.com/davbauer/knock-knock-portal/internal/session"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -26,6 +27,7 @@ type Router struct {
 	passwordVerifier *auth.PasswordVerifier
 	sessionManager   *session.Manager
 	allowlistManager *ipallowlist.Manager
+	proxyManager     *proxy.Manager
 	ipExtractor      *middleware.RealIPExtractor
 	indexHTMLHash    string // SHA256 hash of index.html for cache busting
 }
@@ -37,6 +39,7 @@ func NewRouter(
 	passwordVerifier *auth.PasswordVerifier,
 	sessionManager *session.Manager,
 	allowlistManager *ipallowlist.Manager,
+	proxyManager *proxy.Manager,
 ) *Router {
 	// Set Gin mode
 	gin.SetMode(gin.ReleaseMode)
@@ -61,10 +64,15 @@ func NewRouter(
 	cfg := configLoader.GetConfig()
 	ipExtractor, _ := middleware.NewRealIPExtractor(&cfg.TrustedProxyConfig)
 	
-	// Register callback to update IP extractor when config reloads
+	// Register callback to update IP extractor and proxy manager when config reloads
 	configLoader.RegisterReloadCallback(func(newCfg *config.ApplicationConfig) {
 		ipExtractor.Reload(&newCfg.TrustedProxyConfig)
 		allowlistManager.Reload(&newCfg.NetworkAccessControl)
+		
+		// Reload proxy manager to apply service changes
+		if err := proxyManager.Reload(); err != nil {
+			// Log error but don't fail - proxy manager logs details
+		}
 	})
 	
 	engine.Use(ipExtractor.Middleware())
@@ -76,6 +84,7 @@ func NewRouter(
 		passwordVerifier: passwordVerifier,
 		sessionManager:   sessionManager,
 		allowlistManager: allowlistManager,
+		proxyManager:     proxyManager,
 		ipExtractor:      ipExtractor,
 	}
 

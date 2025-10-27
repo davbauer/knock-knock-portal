@@ -82,10 +82,50 @@ func (m *Manager) Start() error {
 			sessionTimeout := time.Duration(cfg.ProxyServerConfig.UDPSessionTimeoutSeconds) * time.Second
 			proxy = NewUDPProxy(&cfg.ProtectedServices[i], m.allowlistManager, sessionTimeout, maxConnections)
 		} else if service.TransportProtocol == "both" {
-			log.Warn().
-				Str("service", service.ServiceName).
-				Msg("'both' protocol requires two service definitions (one TCP, one UDP), skipping")
-			continue
+			// Create both TCP and UDP proxies for the same service
+			sessionTimeout := time.Duration(cfg.ProxyServerConfig.UDPSessionTimeoutSeconds) * time.Second
+			
+			// Start TCP proxy
+			tcpProxy := NewTCPProxy(&cfg.ProtectedServices[i], m.allowlistManager, maxConnections)
+			if err := tcpProxy.Start(); err != nil {
+				log.Error().
+					Err(err).
+					Str("service", service.ServiceName).
+					Str("protocol", "tcp").
+					Msg("Failed to start TCP proxy")
+			} else {
+				m.mu.Lock()
+				m.proxies[service.ServiceID+"-tcp"] = tcpProxy
+				m.mu.Unlock()
+				log.Info().
+					Str("service", service.ServiceName).
+					Str("service_id", service.ServiceID).
+					Int("listen_port", service.ProxyListenPortStart).
+					Str("protocol", "tcp").
+					Msg("TCP proxy started successfully")
+			}
+			
+			// Start UDP proxy
+			udpProxy := NewUDPProxy(&cfg.ProtectedServices[i], m.allowlistManager, sessionTimeout, maxConnections)
+			if err := udpProxy.Start(); err != nil {
+				log.Error().
+					Err(err).
+					Str("service", service.ServiceName).
+					Str("protocol", "udp").
+					Msg("Failed to start UDP proxy")
+			} else {
+				m.mu.Lock()
+				m.proxies[service.ServiceID+"-udp"] = udpProxy
+				m.mu.Unlock()
+				log.Info().
+					Str("service", service.ServiceName).
+					Str("service_id", service.ServiceID).
+					Int("listen_port", service.ProxyListenPortStart).
+					Str("protocol", "udp").
+					Msg("UDP proxy started successfully")
+			}
+			
+			continue // Skip the normal start logic below
 		} else {
 			log.Warn().
 				Str("service", service.ServiceName).
@@ -161,6 +201,19 @@ func (m *Manager) Stop() error {
 	log.Info().Msg("Proxy manager stopped")
 
 	return nil
+}
+
+// Reload stops all existing proxies and restarts them with new config
+func (m *Manager) Reload() error {
+	log.Info().Msg("Reloading proxy manager with new configuration")
+
+	// Stop all existing proxies
+	if err := m.Stop(); err != nil {
+		log.Error().Err(err).Msg("Error during proxy manager stop")
+	}
+
+	// Start with new configuration
+	return m.Start()
 }
 
 // GetStats returns statistics for all active proxies

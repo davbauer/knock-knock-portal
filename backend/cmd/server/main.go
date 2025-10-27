@@ -91,13 +91,14 @@ func main() {
 	}
 	defer proxyManager.Stop()
 
-	// Setup API router
+	// Setup API router (passes proxy manager for config reload integration)
 	router := api.NewRouter(
 		configLoader,
 		jwtManager,
 		passwordVerifier,
 		sessionManager,
 		allowlistManager,
+		proxyManager,
 	)
 
 	// Start HTTP server
