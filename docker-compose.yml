@@ -72,7 +72,7 @@ services:
       - "8001-8099:8001-8099"
 
     volumes:
-      - ./config.yml:/app/config/config.yml
+      - config:/app/config
 
     environment:
       ADMIN_PASSWORD_BCRYPT_HASH: "${ADMIN_PASSWORD_BCRYPT_HASH}"
@@ -138,5 +138,5 @@ networks:
     driver: bridge
 
 volumes:
+  config:
   traefik_certs:
-    driver: local
