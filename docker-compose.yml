@@ -72,7 +72,7 @@ services:
       - "8001-8099:8001-8099"
 
     volumes:
-      - ./config.yml:/app/config/config.yml:ro
+      - ./config.yml:/app/config/config.yml
 
     environment:
       ADMIN_PASSWORD_BCRYPT_HASH: "${ADMIN_PASSWORD_BCRYPT_HASH}"
