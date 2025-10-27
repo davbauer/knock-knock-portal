@@ -23,6 +23,7 @@ type Manager struct {
 	allowlistManager *ipallowlist.Manager
 	proxies          map[string]Proxy
 	mu               sync.RWMutex
+	stopStatsTicker  chan struct{}
 }
 
 // NewManager creates a new proxy manager
@@ -31,6 +32,7 @@ func NewManager(configLoader *config.Loader, allowlistManager *ipallowlist.Manag
 		configLoader:     configLoader,
 		allowlistManager: allowlistManager,
 		proxies:          make(map[string]Proxy),
+		stopStatsTicker:  make(chan struct{}),
 	}
 }
 
@@ -164,12 +166,64 @@ func (m *Manager) Start() error {
 		Int("active_proxies", activeCount).
 		Msg("Proxy manager started")
 
+	// Start periodic stats logging
+	go m.statsLogger()
+
 	return nil
+}
+
+// statsLogger logs connection statistics every 10 seconds
+func (m *Manager) statsLogger() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			m.logStats()
+		case <-m.stopStatsTicker:
+			return
+		}
+	}
+}
+
+// logStats logs current connection statistics for all proxies
+func (m *Manager) logStats() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if len(m.proxies) == 0 {
+		return
+	}
+
+	totalConnections := 0
+	serviceStats := []map[string]interface{}{}
+
+	for _, proxy := range m.proxies {
+		stats := proxy.GetStats()
+		// Count both TCP connections and UDP sessions
+		if connections, ok := stats["active_connections"].(int32); ok {
+			totalConnections += int(connections)
+		}
+		if sessions, ok := stats["active_sessions"].(int); ok {
+			totalConnections += sessions
+		}
+		serviceStats = append(serviceStats, stats)
+	}
+
+	log.Info().
+		Int("total_active_connections", totalConnections).
+		Int("active_services", len(m.proxies)).
+		Interface("services", serviceStats).
+		Msg("Proxy connection stats")
 }
 
 // Stop gracefully shuts down all proxies
 func (m *Manager) Stop() error {
 	log.Info().Msg("Stopping proxy manager")
+
+	// Stop stats logger
+	close(m.stopStatsTicker)
 
 	m.mu.Lock()
 	proxies := make(map[string]Proxy)

@@ -212,7 +212,7 @@ func (m *Manager) IsIPAllowed(ip netip.Addr) (allowed bool, reason string) {
 	if value, ok := m.dnsIPEntries.Load(ipStr); ok {
 		entry := value.(*Entry)
 		if !entry.IsExpired() {
-			log.Info().
+			log.Debug().
 				Str("ip", ipStr).
 				Str("source_type", string(entry.SourceType)).
 				Str("original_hostname", entry.OriginalHostname).
@@ -234,7 +234,7 @@ func (m *Manager) IsIPAllowed(ip netip.Addr) (allowed bool, reason string) {
 				Msg("IP found in allowlist but entry is expired")
 			// Continue to check CIDR ranges
 		} else {
-			log.Info().
+			log.Debug().
 				Str("ip", ipStr).
 				Str("source_type", string(entry.SourceType)).
 				Msg("IP allowed - exact match")
@@ -248,7 +248,7 @@ func (m *Manager) IsIPAllowed(ip netip.Addr) (allowed bool, reason string) {
 
 	for _, entry := range m.cidrEntries {
 		if !entry.IsExpired() && m.matcher.MatchesIP(ip, entry) {
-			log.Info().
+			log.Debug().
 				Str("ip", ipStr).
 				Str("source_type", string(entry.SourceType)).
 				Str("cidr", entry.IPPrefix.String()).

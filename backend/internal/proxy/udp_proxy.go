@@ -415,11 +415,16 @@ func (p *UDPProxy) GetStats() map[string]interface{} {
 
 	p.sessionsMu.RLock()
 	sessionCount := len(p.sessions)
+	clientIPs := make([]string, 0, sessionCount)
+	for sessionKey := range p.sessions {
+		clientIPs = append(clientIPs, sessionKey)
+	}
 	p.sessionsMu.RUnlock()
 
 	return map[string]interface{}{
 		"total_packets":   packetCount,
 		"active_sessions": sessionCount,
+		"client_ips":      clientIPs,
 		"max_sessions":    p.maxSessions,
 		"service_name":    p.service.ServiceName,
 		"listen_port":     p.service.ProxyListenPortStart,
