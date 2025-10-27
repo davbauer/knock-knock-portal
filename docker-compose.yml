@@ -1,86 +1,30 @@
 # ==============================================================================
 # Knock-Knock Portal with Traefik (Automatic HTTPS)
 # ==============================================================================
-#
-# Production-ready setup with automatic SSL certificates from Let's Encrypt
-#
-# Setup:
-# 1. Set environment variables (create .env file):
-#    DOMAIN=knock.example.com
-#    ACME_EMAIL=admin@example.com
-#    ADMIN_PASSWORD_BCRYPT_HASH=<generate with: htpasswd -bnBC 12 "" password | tr -d ':\n'>
-#    JWT_SIGNING_SECRET_KEY=<generate with: openssl rand -base64 32>
-#
-# 2. Point knock.example.com DNS A record to this server's IP
-#
-# 3. Create config.yml with your protected services
-#
-# 4. Run: docker compose up -d
-#
-# Traefik will automatically obtain and renew SSL certificates!
-# ==============================================================================
 
 services:
-  # Traefik - reverse proxy with automatic HTTPS
-  traefik:
-    image: traefik:v3.0
-    container_name: traefik
-    restart: unless-stopped
-    command:
-      # Docker provider
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-
-      # HTTP entrypoint (port 80)
-      - "--entrypoints.web.address=:80"
-
-      # HTTPS entrypoint (port 443)
-      - "--entrypoints.websecure.address=:443"
-
-      # Redirect HTTP to HTTPS
-      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
-      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
-
-      # Let's Encrypt automatic SSL
-      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
-      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
-      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
-
-      # Logging
-      - "--log.level=ERROR"
-      - "--accesslog=false"
-
-    ports:
-      - "80:80"
-      - "443:443"
-
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - traefik_certs:/letsencrypt
-
-    networks:
-      - web
-
-  # Knock-Knock Portal
   knock-knock-portal:
     image: ghcr.io/davbauer/knock-knock-portal:main-amd64
     container_name: knock-knock-portal
     restart: unless-stopped
 
+    # Exposed proxy ports (accessible from outside)
     ports:
-      # Proxy ports for protected services (adjust range as needed)
-      - "8001-8099:8001-8099"
+      - "8000-8010:8000-8010/tcp"
+      - "8000-8010:8000-8010/udp"
 
     volumes:
-      - config:/app/config
+      - knock_knock_config:/app/config
+      - knock_knock_logs:/app/logs
 
     environment:
-      ADMIN_PASSWORD_BCRYPT_HASH: "${ADMIN_PASSWORD_BCRYPT_HASH}"
-      JWT_SIGNING_SECRET_KEY: "${JWT_SIGNING_SECRET_KEY}"
+      # PLEASE CHANGE: Generate with `htpasswd -nbBC 12 admin YOUR_PASSWORD`
+      ADMIN_PASSWORD_BCRYPT_HASH: "$$2y$$12$$iDQ8Gc/g4x0e0qK.CSLLOuhq4m6KIt6J4hRpVrcDvtsfGy/NV431q"
+      # PLEASE CHANGE: Generate with `openssl rand -base64 32`
+      JWT_SIGNING_SECRET_KEY: "x7XiOu6GdmPW0MGqLsZxbv5xLG4YFdOjdBYlGatvgpQ="
       LOG_LEVEL: "info"
       LOG_FORMAT: "json"
 
-    # Access services on Docker host via host.docker.internal
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -102,41 +46,67 @@ services:
       timeout: 5s
       retries: 3
 
-    # Traefik routing with automatic HTTPS
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.portal.rule=Host(`${DOMAIN:-knock.example.com}`)"
+      - "traefik.docker.network=web"
+      # PLEASE CHANGE: Set your domain
+      - "traefik.http.routers.portal-http.rule=Host(`${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.portal-http.entrypoints=web"
+      - "traefik.http.routers.portal-http.service=portal"
+      # PLEASE CHANGE: Set your domain
+      - "traefik.http.routers.portal.rule=Host(`${DOMAIN:-example.com}`)"
       - "traefik.http.routers.portal.entrypoints=websecure"
       - "traefik.http.routers.portal.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.portal.service=portal"
       - "traefik.http.services.portal.loadbalancer.server.port=8000"
-
-      # Security headers
       - "traefik.http.middlewares.secure.headers.stsSeconds=31536000"
       - "traefik.http.middlewares.secure.headers.stsIncludeSubdomains=true"
       - "traefik.http.middlewares.secure.headers.forceSTSHeader=true"
       - "traefik.http.routers.portal.middlewares=secure"
 
-# ==============================================================================
-# Example protected service - uncomment and configure in config.yml
-# ==============================================================================
-#  ssh-server:
-#    image: linuxserver/openssh-server:latest
-#    container_name: ssh-server
-#    restart: unless-stopped
-#    networks:
-#      - backend
-#    expose:
-#      - "2222"
-#    environment:
-#      - PUID=1000
-#      - PGID=1000
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: unless-stopped
+    depends_on:
+      - knock-knock-portal
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      # PLEASE CHANGE: Set your email for Let's Encrypt notifications
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=INFO"
+      - "--accesslog=true"
+
+    # HTTP/HTTPS (accessible from outside)
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_certs:/letsencrypt
+
+    networks:
+      - web
 
 networks:
   web:
     driver: bridge
+    name: web
   backend:
     driver: bridge
 
 volumes:
-  config:
   traefik_certs:
+    driver: local
+  knock_knock_logs:
+    driver: local
+  knock_knock_config:
+    driver: local

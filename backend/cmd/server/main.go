@@ -34,7 +34,12 @@ func main() {
 	// Load configuration
 	configPath := os.Getenv("CONFIG_FILE_PATH")
 	if configPath == "" {
-		configPath = "./config.yml"
+		// Check if running in Docker container
+		if _, err := os.Stat("/.dockerenv"); err == nil {
+			configPath = "/app/config/config.yml"
+		} else {
+			configPath = "./config.yml"
+		}
 	}
 
 	configLoader, err := config.NewLoader(configPath)
