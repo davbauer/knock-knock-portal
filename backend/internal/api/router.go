@@ -56,9 +56,16 @@ func NewRouter(
 		AllowCredentials: true,
 	}))
 
-	// Real IP extractor
+	// Real IP extractor with dynamic config reload
 	cfg := configLoader.GetConfig()
 	ipExtractor, _ := middleware.NewRealIPExtractor(&cfg.TrustedProxyConfig)
+	
+	// Register callback to update IP extractor when config reloads
+	configLoader.RegisterReloadCallback(func(newCfg *config.ApplicationConfig) {
+		newExtractor, _ := middleware.NewRealIPExtractor(&newCfg.TrustedProxyConfig)
+		*ipExtractor = *newExtractor
+	})
+	
 	engine.Use(ipExtractor.Middleware())
 
 	router := &Router{

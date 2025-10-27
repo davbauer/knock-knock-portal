@@ -262,7 +262,7 @@
 
 	<!-- Trusted Proxy Configuration -->
 	<div class="border-border bg-base-100 rounded-xl border p-6">
-		<h3 class="text-base-content mb-4 text-lg font-semibold">Trusted Proxy Settings</h3>
+		<h3 class="text-base-content mb-4 text-lg font-semibold">Reverse Proxy Security</h3>
 		<div class="space-y-4">
 			<div>
 				<Switch.Root
@@ -282,12 +282,15 @@
 						/>
 					</Switch.Control>
 					<Switch.Label class="text-base-content cursor-pointer text-sm font-medium"
-						>Enable Trusted Proxy</Switch.Label
+						>Enable Trusted Proxy Detection</Switch.Label
 					>
 					<Switch.HiddenInput />
 				</Switch.Root>
 				<p class="text-base-muted ml-14 mt-1 text-xs">
-					Trust X-Forwarded-For headers from specified proxies
+					<strong>When ENABLED:</strong> Trusts X-Forwarded-For headers from IPs in the trusted
+					range below, showing real client IPs.<br />
+					<strong>When DISABLED:</strong> Ignores all proxy headers (shows proxy IP instead of client
+					IP) to prevent IP spoofing.
 				</p>
 			</div>
 			{#if config.trusted_proxy_config.enabled}
@@ -297,8 +300,8 @@
 					>
 					<textarea
 						value={config.trusted_proxy_config.trusted_proxy_ip_ranges.join('\n')}
-						rows={2}
-						placeholder="e.g., 10.0.0.1/32"
+						rows={3}
+						placeholder="172.16.0.0/12 (Docker networks)&#10;10.0.0.0/8 (Private network)&#10;Traefik/Nginx container IP"
 						class="border-border bg-base-100 text-base-content focus:ring-primary w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2"
 						oninput={(e) => {
 							configStore.updateConfig((cfg) => {
@@ -310,7 +313,8 @@
 						}}
 					></textarea>
 					<Field.HelperText class="text-base-muted mt-1 text-xs"
-						>One IP range per line (CIDR notation)</Field.HelperText
+						>One IP/CIDR range per line. For Docker: use 172.16.0.0/12 to trust all Docker networks.
+						Check connection info popup for untrusted proxy warnings.</Field.HelperText
 					>
 				</Field.Root>
 			{/if}

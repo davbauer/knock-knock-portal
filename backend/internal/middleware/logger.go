@@ -21,12 +21,18 @@ func RequestLogger() gin.HandlerFunc {
 		duration := time.Since(start)
 		statusCode := c.Writer.Status()
 
+		// Get client IP from our middleware (respects trusted proxy config)
+		clientIP := "unknown"
+		if addr, ok := GetClientIP(c); ok {
+			clientIP = addr.String()
+		}
+
 		logEvent := log.Info().
 			Str("method", method).
 			Str("path", path).
 			Int("status", statusCode).
 			Dur("duration", duration).
-			Str("client_ip", c.ClientIP())
+			Str("client_ip", clientIP)
 
 		// Add error if present
 		if len(c.Errors) > 0 {

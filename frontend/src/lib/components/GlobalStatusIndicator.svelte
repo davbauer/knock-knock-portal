@@ -9,15 +9,16 @@
 	interface IPAllowStatus {
 		current_ip: string;
 		allowed: boolean;
-		access_method: string; // "permanent_ip_range" | "dynamic_dns_hostname" | "authenticated_session" | "not_allowed"
+		access_method: string;
 		access_description: string;
-		username?: string; // Only present if authenticated via session
-		authenticated_ips?: string[]; // Only present if session exists
-		session_expires_in?: number; // Only present if session exists
-		services?: ServiceAccessInfo[]; // Service-level access details
+		username?: string;
+		authenticated_ips?: string[];
+		session_expires_in?: number;
+		services?: ServiceAccessInfo[];
 		total_services?: number;
 		session_active?: boolean;
 		session_username?: string;
+		proxy_warning?: string;
 	}
 
 	interface ServiceAccessInfo {
@@ -103,7 +104,8 @@
 					current_ip: info.client_ip || 'Unknown',
 					allowed: info.allowed || false,
 					access_method: info.access_method || 'not_allowed',
-					access_description: info.access_description || ''
+					access_description: info.access_description || '',
+					proxy_warning: info.proxy_warning
 				};
 				error = null;
 			}
@@ -341,6 +343,20 @@
 							<div class="text-base-content/70 mb-2 text-xs font-medium uppercase tracking-wide">
 								Current Connection
 							</div>
+							
+							<!-- Proxy Warning -->
+							{#if status.proxy_warning}
+								<div class="bg-warning/10 border-warning/20 text-warning mb-3 rounded-lg border p-3">
+									<div class="mb-1 flex items-center gap-2">
+										<AlertCircle class="h-4 w-4" />
+										<span class="text-sm font-semibold">Proxy Configuration Issue</span>
+									</div>
+									<div class="text-xs leading-relaxed opacity-90">
+										{status.proxy_warning}
+									</div>
+								</div>
+							{/if}
+							
 							<div class="flex items-center gap-2">
 								{#if status.allowed}
 									<CheckCircle2 class="text-success h-4 w-4" />
