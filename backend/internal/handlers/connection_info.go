@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"net/netip"
-
 	"github.com/davbauer/knock-knock-portal/internal/config"
 	"github.com/davbauer/knock-knock-portal/internal/ipallowlist"
 	"github.com/davbauer/knock-knock-portal/internal/middleware"
