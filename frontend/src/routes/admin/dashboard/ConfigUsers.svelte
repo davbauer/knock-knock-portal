@@ -122,14 +122,6 @@
 		userToDelete = null;
 	}
 
-	function toggleService(serviceId: string) {
-		if (formSelectedServices.includes(serviceId)) {
-			formSelectedServices = formSelectedServices.filter((id) => id !== serviceId);
-		} else {
-			formSelectedServices = [...formSelectedServices, serviceId];
-		}
-	}
-
 	function abbreviateId(id: string): string {
 		// If it looks like a UUID (has dashes), show first 8 chars
 		if (id.includes('-') && id.length > 12) {
@@ -413,49 +405,56 @@
 							>
 							<div class="border-border max-h-60 space-y-2 overflow-y-auto rounded-lg border p-3">
 								{#if config.protected_services && config.protected_services.length > 0}
-									{#each config.protected_services as service, idx}
-										<label
-											class="hover:bg-base-200 flex cursor-pointer items-start gap-3 rounded p-2 transition-colors"
-										>
-											<input
-												type="checkbox"
-												checked={formSelectedServices.includes(service.service_id)}
-												onchange={() => toggleService(service.service_id)}
-												class="border-border text-primary focus:ring-primary bg-base-100 mt-1 h-4 w-4 rounded border-2 focus:ring-2"
-											/>
-											<div class="min-w-0 flex-1">
-												<div class="text-base-content text-sm font-medium">
-													{service.service_name}
-												</div>
-												<div class="mt-1 flex flex-wrap items-center gap-2">
-													<span
-														class="bg-base-300 text-base-muted rounded px-1.5 py-0.5 font-mono text-xs"
+									<Checkbox.Group bind:value={formSelectedServices} name="allowed_services">
+										{#each config.protected_services as service (service.service_id)}
+											{@const isChecked = formSelectedServices.includes(service.service_id)}
+											<label
+												class="hover:bg-base-200 flex cursor-pointer items-start gap-3 rounded p-2 transition-colors"
+											>
+												<Checkbox.Root value={service.service_id}>
+													<Checkbox.Control
+														class="border-border text-primary focus:ring-primary bg-base-100 data-[state=checked]:bg-primary data-[state=checked]:border-primary mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 focus:ring-2"
 													>
-														{abbreviateId(service.service_id)}
-													</span>
-													<span class="text-base-muted text-xs">
-														{#if service.proxy_listen_port_start === service.proxy_listen_port_end}
-															:{service.proxy_listen_port_start}
-														{:else}
-															:{service.proxy_listen_port_start}-{service.proxy_listen_port_end}
-														{/if}
-													</span>
-													<span
-														class="bg-primary/10 text-primary rounded px-1.5 py-0.5 text-xs font-medium"
-													>
-														{formatProtocol(service.transport_protocol)}
-													</span>
-													{#if service.is_http_protocol}
+														<Checkbox.Indicator>
+															<Check class="h-3 w-3 text-white" />
+														</Checkbox.Indicator>
+													</Checkbox.Control>
+													<Checkbox.HiddenInput />
+												</Checkbox.Root>
+												<div class="min-w-0 flex-1">
+													<div class="text-base-content text-sm font-medium">
+														{service.service_name}
 														<span
-															class="rounded bg-blue-500/10 px-1.5 py-0.5 text-xs font-medium text-blue-500"
+															class="bg-base-300 text-base-muted rounded px-1.5 py-0.5 font-mono text-xs"
 														>
-															HTTP
+															{abbreviateId(service.service_id)}
 														</span>
-													{/if}
+													</div>
+													<div class="mt-1 flex flex-wrap items-center gap-2">
+														<span class="text-base-muted text-xs">
+															{#if service.proxy_listen_port_start === service.proxy_listen_port_end}
+																:{service.proxy_listen_port_start}
+															{:else}
+																:{service.proxy_listen_port_start}-{service.proxy_listen_port_end}
+															{/if}
+														</span>
+														<span
+															class="bg-primary/10 text-primary rounded px-1.5 py-0.5 text-xs font-medium"
+														>
+															{formatProtocol(service.transport_protocol)}
+														</span>
+														{#if service.is_http_protocol}
+															<span
+																class="rounded bg-blue-500/10 px-1.5 py-0.5 text-xs font-medium text-blue-500"
+															>
+																HTTP
+															</span>
+														{/if}
+													</div>
 												</div>
-											</div>
-										</label>
-									{/each}
+											</label>
+										{/each}
+									</Checkbox.Group>
 								{:else}
 									<p class="text-base-muted text-xs">No services configured yet</p>
 								{/if}

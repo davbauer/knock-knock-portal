@@ -21,10 +21,10 @@
 	let formServiceId = $state('');
 	let formServiceName = $state('');
 	let formDescription = $state('');
-	let formProxyPortStart = $state<number>(10000);
-	let formProxyPortEnd = $state<number>(10000);
+	let formProxyPortStart = $state<number>(0);
+	let formProxyPortEnd = $state<number>(0);
 	let formBackendHost = $state('');
-	let formBackendPort = $state<number>(8080);
+	let formBackendPort = $state<number>(0);
 	let formTransportProtocol = $state('tcp');
 	let formIsHttp = $state(false);
 	let formEnabled = $state(true);
@@ -35,12 +35,16 @@
 	let formRemoveRequestHeaders = $state('');
 	let formInjectResponseHeaders = $state('');
 
-	// Mirror proxy port start to end and backend port when creating new service
-	function handleProxyPortStartChange(value: number) {
-		formProxyPortStart = value;
-		if (!editingService) {
-			formProxyPortEnd = value;
-			formBackendPort = value;
+	// Auto-fill helper functions
+	function handleProxyPortEndFocus() {
+		if (formProxyPortEnd === 0 || formProxyPortEnd === null) {
+			formProxyPortEnd = formProxyPortStart;
+		}
+	}
+
+	function handleBackendPortFocus() {
+		if (formBackendPort === 0 || formBackendPort === null) {
+			formBackendPort = formProxyPortStart;
 		}
 	}
 
@@ -49,10 +53,10 @@
 		formServiceId = generateUUID();
 		formServiceName = '';
 		formDescription = '';
-		formProxyPortStart = 10000;
-		formProxyPortEnd = 10000;
-		formBackendHost = 'localhost';
-		formBackendPort = 8080;
+		formProxyPortStart = 0;
+		formProxyPortEnd = 0;
+		formBackendHost = '';
+		formBackendPort = 0;
 		formTransportProtocol = 'tcp';
 		formIsHttp = false;
 		formEnabled = true;
@@ -151,6 +155,39 @@
 			return;
 		}
 
+		// Port validation
+		if (formProxyPortStart <= 0 || formProxyPortStart > 65535) {
+			toaster.error({
+				title: 'Validation Error',
+				description: 'Proxy Port Start must be between 1 and 65535'
+			});
+			return;
+		}
+
+		if (formProxyPortEnd <= 0 || formProxyPortEnd > 65535) {
+			toaster.error({
+				title: 'Validation Error',
+				description: 'Proxy Port End must be between 1 and 65535'
+			});
+			return;
+		}
+
+		if (formProxyPortEnd < formProxyPortStart) {
+			toaster.error({
+				title: 'Validation Error',
+				description: 'Proxy Port End must be greater than or equal to Proxy Port Start'
+			});
+			return;
+		}
+
+		if (formBackendPort <= 0 || formBackendPort > 65535) {
+			toaster.error({
+				title: 'Validation Error',
+				description: 'Backend Port must be between 1 and 65535'
+			});
+			return;
+		}
+
 		// Build HTTP config if HTTP is enabled
 		let httpConfig = null;
 		if (formIsHttp) {
@@ -172,10 +209,10 @@
 			service_id: formServiceId.trim(),
 			service_name: formServiceName.trim(),
 			description: formDescription.trim(),
-			proxy_listen_port_start: formProxyPortStart,
-			proxy_listen_port_end: formProxyPortEnd,
+			proxy_listen_port_start: Number(formProxyPortStart),
+			proxy_listen_port_end: Number(formProxyPortEnd),
 			backend_target_host: formBackendHost.trim(),
-			backend_target_port: formBackendPort,
+			backend_target_port: Number(formBackendPort),
 			transport_protocol: formTransportProtocol,
 			is_http_protocol: formIsHttp,
 			enabled: formEnabled,
@@ -427,8 +464,7 @@
 								>
 								<Field.Input
 									type="number"
-									value={formProxyPortStart}
-									oninput={(e) => handleProxyPortStartChange(Number(e.currentTarget.value))}
+									bind:value={formProxyPortStart}
 									min="1"
 									max="65535"
 									class="border-border bg-base-100 text-base-content focus:ring-primary w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2"
@@ -443,6 +479,7 @@
 								<Field.Input
 									type="number"
 									bind:value={formProxyPortEnd}
+									onfocus={handleProxyPortEndFocus}
 									min="1024"
 									max="65535"
 									class="border-border bg-base-100 text-base-content focus:ring-primary w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2"
@@ -472,6 +509,7 @@
 								<Field.Input
 									type="number"
 									bind:value={formBackendPort}
+									onfocus={handleBackendPortFocus}
 									min="1"
 									max="65535"
 									class="border-border bg-base-100 text-base-content focus:ring-primary w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2"
