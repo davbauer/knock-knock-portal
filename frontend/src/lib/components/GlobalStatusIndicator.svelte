@@ -346,10 +346,10 @@
 							
 							<!-- Proxy Warning -->
 							{#if status.proxy_warning}
-								<div class="bg-warning/10 border-warning/20 text-warning mb-3 rounded-lg border p-3">
+								<div class="bg-warning/10 border border-warning/30 text-warning mb-3 rounded-lg p-3">
 									<div class="mb-1 flex items-center gap-2">
-										<AlertCircle class="h-4 w-4" />
-										<span class="text-sm font-semibold">Proxy Configuration Issue</span>
+										<AlertCircle class="h-4 w-4 shrink-0" />
+										<span class="text-sm font-semibold">Proxy Configuration</span>
 									</div>
 									<div class="text-xs leading-relaxed opacity-90">
 										{status.proxy_warning}
