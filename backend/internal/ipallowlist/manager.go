@@ -19,9 +19,11 @@ type Manager struct {
 	matcher        *Matcher
 	dnsResolver    *DNSResolver
 	config         *config.NetworkAccessControlConfig
+	configMutex    sync.RWMutex
 	sessionIPIndex sync.Map // map[sessionID]string (sessionID -> IP) for O(1) removal
 	ctx            context.Context
 	cancel         context.CancelFunc
+	dnsCancel      context.CancelFunc // Separate cancel for DNS refresh
 }
 
 // NewManager creates a new IP allowlist manager
@@ -49,7 +51,11 @@ func NewManager(cfg *config.NetworkAccessControlConfig) *Manager {
 
 // loadPermanentIPRanges loads permanently allowed IP ranges from config
 func (m *Manager) loadPermanentIPRanges() {
-	for _, ipRange := range m.config.PermanentlyAllowedIPRanges {
+	m.configMutex.RLock()
+	cfg := m.config
+	m.configMutex.RUnlock()
+
+	for _, ipRange := range cfg.PermanentlyAllowedIPRanges {
 		addr, prefix, err := ParseIPOrPrefix(ipRange)
 		if err != nil {
 			log.Error().
@@ -84,11 +90,19 @@ func (m *Manager) loadPermanentIPRanges() {
 
 // startDNSRefresh starts periodic DNS resolution
 func (m *Manager) startDNSRefresh() {
-	interval := time.Duration(m.config.DNSRefreshIntervalSeconds) * time.Second
+	m.configMutex.RLock()
+	cfg := m.config
+	m.configMutex.RUnlock()
+
+	interval := time.Duration(cfg.DNSRefreshIntervalSeconds) * time.Second
+
+	// Create a separate context for DNS refresh so we can restart it
+	dnsCtx, dnsCancel := context.WithCancel(m.ctx)
+	m.dnsCancel = dnsCancel
 
 	m.dnsResolver.StartPeriodicRefresh(
-		m.ctx,
-		m.config.AllowedDynamicDNSHostnames,
+		dnsCtx,
+		cfg.AllowedDynamicDNSHostnames,
 		interval,
 		func(results map[string][]netip.Addr) {
 			m.updateDNSEntries(results)
@@ -96,7 +110,7 @@ func (m *Manager) startDNSRefresh() {
 	)
 
 	log.Info().
-		Int("count", len(m.config.AllowedDynamicDNSHostnames)).
+		Int("count", len(cfg.AllowedDynamicDNSHostnames)).
 		Dur("interval", interval).
 		Msg("Started DNS refresh")
 }
@@ -330,4 +344,79 @@ func (m *Manager) GetAllowlistStats() map[string]interface{} {
 // Close stops the allowlist manager
 func (m *Manager) Close() {
 	m.cancel()
+}
+
+// Reload updates the manager with new configuration (thread-safe, instant reload)
+func (m *Manager) Reload(newCfg *config.NetworkAccessControlConfig) {
+	m.configMutex.Lock()
+	oldCfg := m.config
+	m.config = newCfg
+	m.configMutex.Unlock()
+
+	log.Info().Msg("Reloading IP allowlist configuration...")
+
+	// Step 1: Clear all permanent IP entries (both exact and CIDR)
+	m.exactIPEntries.Range(func(key, value interface{}) bool {
+		entry := value.(*Entry)
+		if entry.SourceType == EntryTypePermanent {
+			m.exactIPEntries.Delete(key)
+		}
+		return true
+	})
+
+	m.cidrMutex.Lock()
+	newCIDREntries := []*Entry{}
+	for _, entry := range m.cidrEntries {
+		if entry.SourceType != EntryTypePermanent {
+			newCIDREntries = append(newCIDREntries, entry)
+		}
+	}
+	m.cidrEntries = newCIDREntries
+	m.cidrMutex.Unlock()
+
+	// Step 2: Load new permanent IP ranges
+	m.loadPermanentIPRanges()
+
+	// Step 3: Restart DNS refresh if hostnames changed
+	oldHostnames := oldCfg.AllowedDynamicDNSHostnames
+	newHostnames := newCfg.AllowedDynamicDNSHostnames
+
+	hostnamesChanged := len(oldHostnames) != len(newHostnames)
+	if !hostnamesChanged {
+		hostnameMap := make(map[string]bool)
+		for _, h := range oldHostnames {
+			hostnameMap[h] = true
+		}
+		for _, h := range newHostnames {
+			if !hostnameMap[h] {
+				hostnamesChanged = true
+				break
+			}
+		}
+	}
+
+	if hostnamesChanged {
+		// Stop old DNS refresh
+		if m.dnsCancel != nil {
+			m.dnsCancel()
+		}
+
+		// Clear DNS entries
+		m.dnsIPEntries = sync.Map{}
+
+		// Start new DNS refresh
+		if len(newHostnames) > 0 {
+			m.startDNSRefresh()
+		}
+
+		log.Info().
+			Int("old_count", len(oldHostnames)).
+			Int("new_count", len(newHostnames)).
+			Msg("DNS hostnames changed - restarted DNS refresh")
+	}
+
+	log.Info().
+		Int("permanent_ip_ranges", len(newCfg.PermanentlyAllowedIPRanges)).
+		Int("dns_hostnames", len(newCfg.AllowedDynamicDNSHostnames)).
+		Msg("IP allowlist configuration reloaded successfully")
 }

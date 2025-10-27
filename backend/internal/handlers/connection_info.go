@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"net"
 	"net/netip"
 
 	"github.com/davbauer/knock-knock-portal/internal/config"
@@ -17,14 +16,16 @@ type ConnectionInfoHandler struct {
 	ipAllowListManager *ipallowlist.Manager
 	sessionManager     *session.Manager
 	configLoader       *config.Loader
+	ipExtractor        *middleware.RealIPExtractor
 }
 
 // NewConnectionInfoHandler creates a new connection info handler
-func NewConnectionInfoHandler(ipAllowListManager *ipallowlist.Manager, sessionManager *session.Manager, configLoader *config.Loader) *ConnectionInfoHandler {
+func NewConnectionInfoHandler(ipAllowListManager *ipallowlist.Manager, sessionManager *session.Manager, configLoader *config.Loader, ipExtractor *middleware.RealIPExtractor) *ConnectionInfoHandler {
 	return &ConnectionInfoHandler{
 		ipAllowListManager: ipAllowListManager,
 		sessionManager:     sessionManager,
 		configLoader:       configLoader,
+		ipExtractor:        ipExtractor,
 	}
 }
 
@@ -41,37 +42,8 @@ func (h *ConnectionInfoHandler) HandleCheck(c *gin.Context) {
 
 	clientIPStr := clientIP.String()
 
-	// Check if there's an untrusted proxy warning
-	var proxyWarning *string
-	if rawIP := c.Request.RemoteAddr; rawIP != "" {
-		// Parse the raw connection IP
-		host, _, _ := net.SplitHostPort(rawIP)
-		if addr, err := netip.ParseAddr(host); err == nil {
-			// Check if proxy headers exist
-			hasProxyHeaders := false
-			proxyHeaders := []string{"X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP"}
-			for _, header := range proxyHeaders {
-				if c.GetHeader(header) != "" {
-					hasProxyHeaders = true
-					break
-				}
-			}
-
-			cfg := h.configLoader.GetConfig()
-			
-			if hasProxyHeaders {
-				if !cfg.TrustedProxyConfig.Enabled {
-					// Proxy headers present but trusted proxy disabled
-					warning := "Proxy detected (" + addr.String() + ") but trusted proxy is DISABLED. Enable 'Reverse Proxy Security' in admin settings to use real client IPs."
-					proxyWarning = &warning
-				} else if addr.String() != clientIPStr {
-					// Trusted proxy enabled but this proxy IP is not in the trusted range
-					warning := "Untrusted proxy detected (" + addr.String() + "). Add this IP to 'Trusted Proxy IP Ranges' in admin settings to trust it."
-					proxyWarning = &warning
-				}
-			}
-		}
-	}
+	// Check if there's an untrusted proxy warning using middleware's detection
+	proxyWarning := h.ipExtractor.GetProxyWarning(c)
 
 	// Check if IP is allowed at the base level (permanent/DNS/session)
 	allowed, baseReason := h.ipAllowListManager.IsIPAllowed(clientIP)

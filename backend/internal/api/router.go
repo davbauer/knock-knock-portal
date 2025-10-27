@@ -26,6 +26,7 @@ type Router struct {
 	passwordVerifier *auth.PasswordVerifier
 	sessionManager   *session.Manager
 	allowlistManager *ipallowlist.Manager
+	ipExtractor      *middleware.RealIPExtractor
 	indexHTMLHash    string // SHA256 hash of index.html for cache busting
 }
 
@@ -62,8 +63,8 @@ func NewRouter(
 	
 	// Register callback to update IP extractor when config reloads
 	configLoader.RegisterReloadCallback(func(newCfg *config.ApplicationConfig) {
-		newExtractor, _ := middleware.NewRealIPExtractor(&newCfg.TrustedProxyConfig)
-		*ipExtractor = *newExtractor
+		ipExtractor.Reload(&newCfg.TrustedProxyConfig)
+		allowlistManager.Reload(&newCfg.NetworkAccessControl)
 	})
 	
 	engine.Use(ipExtractor.Middleware())
@@ -75,6 +76,7 @@ func NewRouter(
 		passwordVerifier: passwordVerifier,
 		sessionManager:   sessionManager,
 		allowlistManager: allowlistManager,
+		ipExtractor:      ipExtractor,
 	}
 
 	// Compute index.html hash for cache busting
@@ -95,7 +97,7 @@ func (r *Router) setupRoutes() {
 		api.GET("/health", healthHandler.Handle)
 
 		// Connection info endpoint (public, returns client IP and allowlist status)
-		connectionInfoHandler := handlers.NewConnectionInfoHandler(r.allowlistManager, r.sessionManager, r.configLoader)
+		connectionInfoHandler := handlers.NewConnectionInfoHandler(r.allowlistManager, r.sessionManager, r.configLoader, r.ipExtractor)
 		api.GET("/connection-info", connectionInfoHandler.HandleCheck)
 
 		// Portal API (public/authenticated)

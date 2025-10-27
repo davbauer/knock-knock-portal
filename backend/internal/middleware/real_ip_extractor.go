@@ -1,17 +1,19 @@
 package middleware
 
 import (
-	"net"
 	"net/netip"
 	"strings"
+	"sync"
 
 	"github.com/davbauer/knock-knock-portal/internal/config"
+	"github.com/davbauer/knock-knock-portal/internal/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
 
 // RealIPExtractor extracts the real client IP considering trusted proxies
 type RealIPExtractor struct {
+	mu                   sync.RWMutex
 	enabled              bool
 	trustedProxyRanges   []netip.Prefix
 	headerPriority       []string
@@ -19,53 +21,61 @@ type RealIPExtractor struct {
 
 // NewRealIPExtractor creates a new real IP extractor
 func NewRealIPExtractor(cfg *config.TrustedProxyConfiguration) (*RealIPExtractor, error) {
-	e := &RealIPExtractor{
-		enabled:        cfg.Enabled,
-		headerPriority: cfg.ClientIPHeaderPriority,
-	}
+	e := &RealIPExtractor{}
+	e.Reload(cfg)
+	return e, nil
+}
+
+// Reload updates the extractor configuration dynamically (thread-safe)
+func (e *RealIPExtractor) Reload(cfg *config.TrustedProxyConfiguration) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.enabled = cfg.Enabled
+	e.headerPriority = cfg.ClientIPHeaderPriority
+	e.trustedProxyRanges = nil // Clear old ranges
 
 	if cfg.Enabled {
 		for _, ipRange := range cfg.TrustedProxyIPRanges {
-			if prefix, err := netip.ParsePrefix(ipRange); err == nil {
+			if prefix, err := utils.ParseIPOrPrefixToPrefix(ipRange); err == nil {
 				e.trustedProxyRanges = append(e.trustedProxyRanges, prefix)
-			} else if addr, err := netip.ParseAddr(ipRange); err == nil {
-				// Single IP - create /32 or /128 prefix
-				bits := 32
-				if addr.Is6() {
-					bits = 128
-				}
-				prefix := netip.PrefixFrom(addr, bits)
-				e.trustedProxyRanges = append(e.trustedProxyRanges, prefix)
+			} else {
+				log.Warn().
+					Err(err).
+					Str("ip_range", ipRange).
+					Msg("Failed to parse trusted proxy IP range")
 			}
 		}
 	}
 
-	return e, nil
+	log.Info().
+		Bool("enabled", e.enabled).
+		Int("trusted_ranges_count", len(e.trustedProxyRanges)).
+		Msg("Real IP extractor configuration reloaded")
 }
 
 // ExtractRealIP extracts the real client IP from the request
 func (e *RealIPExtractor) ExtractRealIP(c *gin.Context) netip.Addr {
+	e.mu.RLock()
+	enabled := e.enabled
+	headerPriority := e.headerPriority
+	e.mu.RUnlock()
+
 	// Get connection IP
-	connIP := e.parseRemoteAddr(c.Request.RemoteAddr)
+	connIP := utils.ParseRemoteAddr(c.Request.RemoteAddr)
 
 	// If trusted proxy is disabled, return connection IP
-	if !e.enabled {
+	if !enabled {
 		return connIP
 	}
 
 	// Check if connection is from a trusted proxy
 	if !e.isTrustedProxy(connIP) {
 		// Check if request has proxy headers - only warn if they tried to use proxy headers
-		hasProxyHeaders := false
-		for _, header := range e.headerPriority {
-			if c.GetHeader(header) != "" {
-				hasProxyHeaders = true
-				break
-			}
-		}
+		hasProxyHeaders := e.hasProxyHeaders(c, headerPriority)
 		
 		// Only log warning if proxy headers are present (potential spoofing attempt)
-		if e.enabled && hasProxyHeaders {
+		if enabled && hasProxyHeaders {
 			log.Warn().
 				Str("untrusted_proxy_ip", connIP.String()).
 				Str("suggestion", "Add this IP to trusted_proxy_ip_ranges in config.yml").
@@ -76,7 +86,7 @@ func (e *RealIPExtractor) ExtractRealIP(c *gin.Context) netip.Addr {
 	}
 
 	// Extract IP from headers in priority order
-	for _, header := range e.headerPriority {
+	for _, header := range headerPriority {
 		value := c.GetHeader(header)
 		if value == "" {
 			continue
@@ -101,23 +111,14 @@ func (e *RealIPExtractor) ExtractRealIP(c *gin.Context) netip.Addr {
 	return connIP
 }
 
-// parseRemoteAddr extracts IP from RemoteAddr (format: "ip:port")
-func (e *RealIPExtractor) parseRemoteAddr(remoteAddr string) netip.Addr {
-	host, _, err := net.SplitHostPort(remoteAddr)
-	if err != nil {
-		// Try parsing as-is
-		if addr, err := netip.ParseAddr(remoteAddr); err == nil {
-			return addr
+// hasProxyHeaders checks if the request has any proxy headers
+func (e *RealIPExtractor) hasProxyHeaders(c *gin.Context, headerPriority []string) bool {
+	for _, header := range headerPriority {
+		if c.GetHeader(header) != "" {
+			return true
 		}
-		return netip.Addr{}
 	}
-
-	addr, err := netip.ParseAddr(host)
-	if err != nil {
-		return netip.Addr{}
-	}
-
-	return addr
+	return false
 }
 
 // isTrustedProxy checks if an IP is in the trusted proxy ranges
@@ -126,6 +127,9 @@ func (e *RealIPExtractor) isTrustedProxy(ip netip.Addr) bool {
 		return false
 	}
 
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
 	for _, prefix := range e.trustedProxyRanges {
 		if prefix.Contains(ip) {
 			return true
@@ -133,6 +137,50 @@ func (e *RealIPExtractor) isTrustedProxy(ip netip.Addr) bool {
 	}
 
 	return false
+}
+
+// GetProxyWarning returns a warning message if there's a proxy configuration issue
+func (e *RealIPExtractor) GetProxyWarning(c *gin.Context) *string {
+	// Get connection IP
+	connIP := utils.ParseRemoteAddr(c.Request.RemoteAddr)
+	if !connIP.IsValid() {
+		return nil
+	}
+
+	// Check if proxy headers exist
+	e.mu.RLock()
+	headerPriority := e.headerPriority
+	enabled := e.enabled
+	e.mu.RUnlock()
+
+	hasProxyHeaders := e.hasProxyHeaders(c, headerPriority)
+
+	// Only warn if proxy headers are present
+	if !hasProxyHeaders {
+		return nil
+	}
+
+	// Verify extraction worked
+	_, hasIP := GetClientIP(c)
+	if !hasIP {
+		return nil
+	}
+
+	if !enabled {
+		// Proxy headers present but trusted proxy disabled
+		warning := "Proxy detected (" + connIP.String() + ") but trusted proxy is DISABLED. Enable 'Reverse Proxy Security' in admin settings to use real client IPs."
+		return &warning
+	}
+
+	// Check if proxy is trusted
+	if !e.isTrustedProxy(connIP) {
+		// Untrusted proxy with headers
+		warning := "Untrusted proxy detected (" + connIP.String() + "). Add this IP to 'Trusted Proxy IP Ranges' in admin settings to trust it."
+		return &warning
+	}
+
+	// Proxy is trusted and working correctly
+	return nil
 }
 
 // Middleware returns a Gin middleware that extracts and stores the real IP
