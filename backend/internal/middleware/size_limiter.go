@@ -23,8 +23,8 @@ func RequestSizeLimiter(maxBytes int64) gin.HandlerFunc {
 				Msg("Request body too large")
 
 			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
-				"error":   "Request body too large",
-				"code":    "REQUEST_TOO_LARGE",
+				"error": "Request body too large",
+				"code":  "REQUEST_TOO_LARGE",
 				"details": map[string]interface{}{
 					"max_size_bytes": maxBytes,
 					"max_size_mb":    float64(maxBytes) / (1024 * 1024),

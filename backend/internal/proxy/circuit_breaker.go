@@ -213,10 +213,10 @@ func (cb *CircuitBreaker) GetStats() map[string]interface{} {
 	state := CircuitState(atomic.LoadInt32(&cb.state))
 
 	stats := map[string]interface{}{
-		"state":            state.String(),
-		"failure_count":    atomic.LoadInt32(&cb.failureCount),
-		"max_failures":     cb.maxFailures,
-		"timeout_seconds":  cb.timeout.Seconds(),
+		"state":             state.String(),
+		"failure_count":     atomic.LoadInt32(&cb.failureCount),
+		"max_failures":      cb.maxFailures,
+		"timeout_seconds":   cb.timeout.Seconds(),
 		"last_state_change": cb.lastStateChange,
 	}
 

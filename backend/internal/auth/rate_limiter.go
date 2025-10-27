@@ -15,7 +15,7 @@ type RateLimiter struct {
 	mu         sync.Mutex
 	rate       rate.Limit
 	burst      int
-	maxEntries int           // Maximum number of limiters to cache
+	maxEntries int // Maximum number of limiters to cache
 	maxIdleAge time.Duration
 }
 

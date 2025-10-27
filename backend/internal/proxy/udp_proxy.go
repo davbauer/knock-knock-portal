@@ -31,13 +31,13 @@ type UDPProxy struct {
 
 // udpSession represents a pseudo-connection for UDP traffic
 type udpSession struct {
-	clientAddr      *net.UDPAddr
-	backendConn     *net.UDPConn
-	backendAddr     *net.UDPAddr // Expected backend address for validation
-	lastActivity    time.Time
-	spoofAttempts   int32 // Counter for spoof detection
+	clientAddr       *net.UDPAddr
+	backendConn      *net.UDPConn
+	backendAddr      *net.UDPAddr // Expected backend address for validation
+	lastActivity     time.Time
+	spoofAttempts    int32 // Counter for spoof detection
 	maxSpoofAttempts int32 // Maximum allowed spoof attempts before termination
-	mu              sync.Mutex
+	mu               sync.Mutex
 }
 
 // NewUDPProxy creates a new UDP proxy
@@ -274,7 +274,7 @@ func (p *UDPProxy) receiveFromBackend(ctx context.Context, session *udpSession) 
 		if addr.String() != expectedBackend.String() {
 			// Increment spoof counter atomically
 			attempts := atomic.AddInt32(&session.spoofAttempts, 1)
-			
+
 			log.Warn().
 				Str("expected_backend", expectedBackend.String()).
 				Str("actual_source", addr.String()).
@@ -282,7 +282,7 @@ func (p *UDPProxy) receiveFromBackend(ctx context.Context, session *udpSession) 
 				Str("service", p.service.ServiceName).
 				Int32("spoof_attempts", attempts).
 				Msg("UDP response from unexpected source - possible spoofing/amplification attack attempt")
-			
+
 			// Terminate session after max spoof attempts to prevent amplification
 			if attempts >= session.maxSpoofAttempts {
 				log.Error().
@@ -290,20 +290,20 @@ func (p *UDPProxy) receiveFromBackend(ctx context.Context, session *udpSession) 
 					Str("service", p.service.ServiceName).
 					Int32("spoof_attempts", attempts).
 					Msg("Maximum spoof attempts reached - terminating UDP session for security")
-				
+
 				// Close backend connection to terminate the session
 				session.mu.Lock()
 				session.backendConn.Close()
 				session.mu.Unlock()
-				
+
 				// Remove from sessions map
 				p.sessionsMu.Lock()
 				delete(p.sessions, session.clientAddr.String())
 				p.sessionsMu.Unlock()
-				
+
 				return
 			}
-			
+
 			continue // Drop the packet
 		}
 

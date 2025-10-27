@@ -149,7 +149,7 @@ func (p *HTTPProxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 // errorHandler handles reverse proxy errors
 func (p *HTTPProxy) errorHandler(w http.ResponseWriter, r *http.Request, err error) {
 	p.circuitBreaker.RecordFailure()
-	
+
 	log.Error().
 		Err(err).
 		Str("service", p.service.ServiceName).

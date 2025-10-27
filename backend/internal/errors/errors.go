@@ -10,17 +10,17 @@ import (
 type ErrorCode string
 
 const (
-	ErrCodeValidation     ErrorCode = "VALIDATION_ERROR"
-	ErrCodeNotFound       ErrorCode = "NOT_FOUND"
-	ErrCodeUnauthorized   ErrorCode = "UNAUTHORIZED"
-	ErrCodeForbidden      ErrorCode = "FORBIDDEN"
-	ErrCodeRateLimit      ErrorCode = "RATE_LIMIT"
-	ErrCodeInternal       ErrorCode = "INTERNAL_ERROR"
-	ErrCodeBadGateway     ErrorCode = "BAD_GATEWAY"
-	ErrCodeTimeout        ErrorCode = "TIMEOUT"
-	ErrCodeConflict       ErrorCode = "CONFLICT"
-	ErrCodeCircuitOpen    ErrorCode = "CIRCUIT_OPEN"
-	ErrCodeResourceLimit  ErrorCode = "RESOURCE_LIMIT"
+	ErrCodeValidation    ErrorCode = "VALIDATION_ERROR"
+	ErrCodeNotFound      ErrorCode = "NOT_FOUND"
+	ErrCodeUnauthorized  ErrorCode = "UNAUTHORIZED"
+	ErrCodeForbidden     ErrorCode = "FORBIDDEN"
+	ErrCodeRateLimit     ErrorCode = "RATE_LIMIT"
+	ErrCodeInternal      ErrorCode = "INTERNAL_ERROR"
+	ErrCodeBadGateway    ErrorCode = "BAD_GATEWAY"
+	ErrCodeTimeout       ErrorCode = "TIMEOUT"
+	ErrCodeConflict      ErrorCode = "CONFLICT"
+	ErrCodeCircuitOpen   ErrorCode = "CIRCUIT_OPEN"
+	ErrCodeResourceLimit ErrorCode = "RESOURCE_LIMIT"
 )
 
 // AppError represents a structured application error
@@ -50,10 +50,10 @@ func captureStackTrace(skip int) []string {
 	const maxDepth = 32
 	var pcs [maxDepth]uintptr
 	n := runtime.Callers(skip+2, pcs[:])
-	
+
 	frames := runtime.CallersFrames(pcs[:n])
 	trace := make([]string, 0, n)
-	
+
 	for {
 		frame, more := frames.Next()
 		trace = append(trace, fmt.Sprintf("%s:%d %s", frame.File, frame.Line, frame.Function))
@@ -61,7 +61,7 @@ func captureStackTrace(skip int) []string {
 			break
 		}
 	}
-	
+
 	return trace
 }
 
@@ -88,7 +88,7 @@ func Wrap(err error, code ErrorCode, message string) *AppError {
 	if err == nil {
 		return nil
 	}
-	
+
 	return &AppError{
 		Code:       code,
 		Message:    message,
@@ -102,7 +102,7 @@ func Wrapf(err error, code ErrorCode, format string, args ...interface{}) *AppEr
 	if err == nil {
 		return nil
 	}
-	
+
 	return &AppError{
 		Code:       code,
 		Message:    fmt.Sprintf(format, args...),

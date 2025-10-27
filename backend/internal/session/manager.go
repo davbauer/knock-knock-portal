@@ -53,7 +53,7 @@ func (m *Manager) CreateSession(userID, username string, clientIP netip.Addr, al
 		if current >= m.maxSessions {
 			return nil, fmt.Errorf("maximum sessions (%d) reached", m.maxSessions)
 		}
-		
+
 		// Atomic increment with double-check
 		newCount := atomic.AddInt32(&m.currentSessions, 1)
 		if newCount > m.maxSessions {

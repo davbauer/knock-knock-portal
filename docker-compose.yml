@@ -1,27 +1,142 @@
+# ==============================================================================
+# Knock-Knock Portal with Traefik (Automatic HTTPS)
+# ==============================================================================
+#
+# Production-ready setup with automatic SSL certificates from Let's Encrypt
+#
+# Setup:
+# 1. Set environment variables (create .env file):
+#    DOMAIN=knock.example.com
+#    ACME_EMAIL=admin@example.com
+#    ADMIN_PASSWORD_BCRYPT_HASH=<generate with: htpasswd -bnBC 12 "" password | tr -d ':\n'>
+#    JWT_SIGNING_SECRET_KEY=<generate with: openssl rand -base64 32>
+#
+# 2. Point knock.example.com DNS A record to this server's IP
+#
+# 3. Create config.yml with your protected services
+#
+# 4. Run: docker compose up -d
+#
+# Traefik will automatically obtain and renew SSL certificates!
+# ==============================================================================
+
 services:
-  knock-knock-portal:
-    # Use main-amd64 for Intel/AMD systems, main-arm64 for Apple Silicon
-    image: "ghcr.io/davbauer/knock-knock-portal:main-amd64"
+  # Traefik - reverse proxy with automatic HTTPS
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      # Docker provider
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+
+      # HTTP entrypoint (port 80)
+      - "--entrypoints.web.address=:80"
+
+      # HTTPS entrypoint (port 443)
+      - "--entrypoints.websecure.address=:443"
+
+      # Redirect HTTP to HTTPS
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+
+      # Let's Encrypt automatic SSL
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+
+      # Logging
+      - "--log.level=ERROR"
+      - "--accesslog=false"
+
     ports:
-      - "8000:8000"
-      - "8080-8099:8080-8099"
+      - "80:80"
+      - "443:443"
+
     volumes:
-      - "config:/app/config"
-    environment:
-      # Default password: admin123 (change in production!)
-      # The $$ escapes the $ character in docker-compose
-      ADMIN_PASSWORD_BCRYPT_HASH: "$$2y$$12$$iDQ8Gc/g4x0e0qK.CSLLOuhq4m6KIt6J4hRpVrcDvtsfGy/NV431q"
-      JWT_SIGNING_SECRET_KEY: "change-me-use-openssl-rand-base64-32-in-production"
-      LOG_LEVEL: "info"
-      LOG_FORMAT: "json"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
-      interval: 30s
-      timeout: 3s
-      start_period: 5s
-      retries: 3
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_certs:/letsencrypt
+
+    networks:
+      - web
+
+  # Knock-Knock Portal
+  knock-knock-portal:
+    image: ghcr.io/davbauer/knock-knock-portal:main-amd64
+    container_name: knock-knock-portal
     restart: unless-stopped
 
+    ports:
+      # Proxy ports for protected services (adjust range as needed)
+      - "8001-8099:8001-8099"
+
+    volumes:
+      - ./config.yml:/app/config/config.yml:ro
+
+    environment:
+      ADMIN_PASSWORD_BCRYPT_HASH: "${ADMIN_PASSWORD_BCRYPT_HASH}"
+      JWT_SIGNING_SECRET_KEY: "${JWT_SIGNING_SECRET_KEY}"
+      LOG_LEVEL: "info"
+      LOG_FORMAT: "json"
+
+    # Access services on Docker host via host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    networks:
+      - web
+      - backend
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8000/api/health",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+    # Traefik routing with automatic HTTPS
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portal.rule=Host(`${DOMAIN:-knock.example.com}`)"
+      - "traefik.http.routers.portal.entrypoints=websecure"
+      - "traefik.http.routers.portal.tls.certresolver=letsencrypt"
+      - "traefik.http.services.portal.loadbalancer.server.port=8000"
+
+      # Security headers
+      - "traefik.http.middlewares.secure.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.secure.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.secure.headers.forceSTSHeader=true"
+      - "traefik.http.routers.portal.middlewares=secure"
+
+# ==============================================================================
+# Example protected service - uncomment and configure in config.yml
+# ==============================================================================
+#  ssh-server:
+#    image: linuxserver/openssh-server:latest
+#    container_name: ssh-server
+#    restart: unless-stopped
+#    networks:
+#      - backend
+#    expose:
+#      - "2222"
+#    environment:
+#      - PUID=1000
+#      - PGID=1000
+
+networks:
+  web:
+    driver: bridge
+  backend:
+    driver: bridge
+
 volumes:
-  config:
-  logs:
+  traefik_certs:
+    driver: local
