@@ -9,6 +9,7 @@ import (
 	"github.com/davbauer/knock-knock-portal/internal/middleware"
 	"github.com/davbauer/knock-knock-portal/internal/models"
 	"github.com/davbauer/knock-knock-portal/internal/session"
+	"github.com/davbauer/knock-knock-portal/internal/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
@@ -43,7 +44,7 @@ func NewPortalLoginHandler(
 		jwtManager:       jwtManager,
 		sessionManager:   sessionManager,
 		allowlistManager: allowlistManager,
-		rateLimiter:      auth.NewRateLimiter(10, 5), // 10/min, burst 5
+		rateLimiter:      auth.NewRateLimiter(10, 5, 5000), // 10/min, burst 5, max 5000 IPs
 	}
 }
 
@@ -79,24 +80,28 @@ func (h *PortalLoginHandler) Handle(c *gin.Context) {
 		}
 	}
 
-	if user == nil {
-		h.rateLimiter.RecordFailure(clientIP.String())
-		c.JSON(401, models.NewErrorResponse("Invalid username or password", "INVALID_CREDENTIALS"))
-		log.Warn().
-			Str("username", req.Username).
-			Str("client_ip", clientIP.String()).
-			Msg("Login attempt with invalid username")
-		return
+	// Always verify password to maintain constant time
+	// even if user doesn't exist (prevents username enumeration via timing)
+	var passwordHash string
+	if user != nil {
+		passwordHash = user.BcryptHashedPassword
+	} else {
+		// Use a dummy hash with same computational cost as real bcrypt
+		passwordHash = "$2a$10$AAAAAAAAAAAAAAAAAAAAAO1234567890123456789012345678"
 	}
 
-	// Verify password
-	if err := h.passwordVerifier.VerifyUserPassword(req.Password, user.BcryptHashedPassword); err != nil {
+	// Verify password (always performed)
+	passwordErr := h.passwordVerifier.VerifyUserPassword(req.Password, passwordHash)
+
+	// Check if user exists and password is valid
+	if user == nil || passwordErr != nil {
 		h.rateLimiter.RecordFailure(clientIP.String())
 		c.JSON(401, models.NewErrorResponse("Invalid username or password", "INVALID_CREDENTIALS"))
 		log.Warn().
 			Str("username", req.Username).
 			Str("client_ip", clientIP.String()).
-			Msg("Login attempt with invalid password")
+			Bool("user_found", user != nil).
+			Msg("Login attempt failed")
 		return
 	}
 
@@ -129,7 +134,7 @@ func (h *PortalLoginHandler) Handle(c *gin.Context) {
 	}
 
 	// Get allowed service names
-	allowedServices := h.getServiceNames(cfg, user.AllowedServiceIDs)
+	allowedServices := utils.GetServiceNames(cfg, user.AllowedServiceIDs)
 
 	// Build response
 	response := map[string]interface{}{
@@ -152,30 +157,4 @@ func (h *PortalLoginHandler) Handle(c *gin.Context) {
 		Msg("User logged in successfully")
 
 	c.JSON(200, models.NewAPIResponse("Login successful", response))
-}
-
-// getServiceNames returns service names for allowed service IDs
-func (h *PortalLoginHandler) getServiceNames(cfg *config.ApplicationConfig, allowedServiceIDs []string) []string {
-	if len(allowedServiceIDs) == 0 {
-		// Return all service names
-		names := []string{}
-		for _, svc := range cfg.ProtectedServices {
-			if svc.Enabled {
-				names = append(names, svc.ServiceName)
-			}
-		}
-		return names
-	}
-
-	// Return specific service names
-	names := []string{}
-	for _, allowedID := range allowedServiceIDs {
-		for _, svc := range cfg.ProtectedServices {
-			if svc.ServiceID == allowedID && svc.Enabled {
-				names = append(names, svc.ServiceName)
-				break
-			}
-		}
-	}
-	return names
 }

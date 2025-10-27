@@ -1,27 +1,32 @@
 package handlers
 
 import (
+	"net/netip"
 	"time"
 
 	"github.com/davbauer/knock-knock-portal/internal/config"
+	"github.com/davbauer/knock-knock-portal/internal/ipallowlist"
 	"github.com/davbauer/knock-knock-portal/internal/middleware"
 	"github.com/davbauer/knock-knock-portal/internal/models"
 	"github.com/davbauer/knock-knock-portal/internal/session"
+	"github.com/davbauer/knock-knock-portal/internal/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
 
 // PortalSessionHandler handles session operations
 type PortalSessionHandler struct {
-	sessionManager *session.Manager
-	configLoader   *config.Loader
+	sessionManager     *session.Manager
+	configLoader       *config.Loader
+	ipAllowListManager *ipallowlist.Manager
 }
 
 // NewPortalSessionHandler creates a new handler
-func NewPortalSessionHandler(sessionManager *session.Manager, configLoader *config.Loader) *PortalSessionHandler {
+func NewPortalSessionHandler(sessionManager *session.Manager, configLoader *config.Loader, ipAllowListManager *ipallowlist.Manager) *PortalSessionHandler {
 	return &PortalSessionHandler{
-		sessionManager: sessionManager,
-		configLoader:   configLoader,
+		sessionManager:     sessionManager,
+		configLoader:       configLoader,
+		ipAllowListManager: ipAllowListManager,
 	}
 }
 
@@ -46,7 +51,7 @@ func (h *PortalSessionHandler) HandleStatus(c *gin.Context) {
 		return
 	}
 
-		// Convert authenticated IP addresses to strings
+	// Convert authenticated IP addresses to strings
 	ipStrings := make([]string, len(sess.AuthenticatedIPAddresses))
 	for i, ip := range sess.AuthenticatedIPAddresses {
 		ipStrings[i] = ip.String()
@@ -57,9 +62,10 @@ func (h *PortalSessionHandler) HandleStatus(c *gin.Context) {
 		expiresIn = 0
 	}
 
-	// Get service names
+	// Get service names and detailed access info
 	cfg := h.configLoader.GetConfig()
-	allowedServices := h.getServiceNames(cfg, sess.AllowedServiceIDs)
+	allowedServices := utils.GetServiceNames(cfg, sess.AllowedServiceIDs)
+	serviceAccessList := h.getServiceAccessDetails(cfg, clientIP, sess)
 
 	response := map[string]interface{}{
 		"session": map[string]interface{}{
@@ -76,6 +82,8 @@ func (h *PortalSessionHandler) HandleStatus(c *gin.Context) {
 			"auto_extend_enabled": sess.AutoExtendEnabled,
 			"allowed_service_ids": sess.AllowedServiceIDs,
 			"allowed_services":    allowedServices,
+			"services":            serviceAccessList,
+			"total_services":      len(serviceAccessList),
 			"active":              !sess.IsExpired(),
 		},
 	}
@@ -83,30 +91,82 @@ func (h *PortalSessionHandler) HandleStatus(c *gin.Context) {
 	c.JSON(200, models.NewAPIResponse("Session status retrieved", response))
 }
 
-// getServiceNames returns service names for allowed service IDs
-func (h *PortalSessionHandler) getServiceNames(cfg *config.ApplicationConfig, allowedServiceIDs []string) []string {
-	if len(allowedServiceIDs) == 0 {
-		// Return all service names
-		names := []string{}
-		for _, svc := range cfg.ProtectedServices {
-			if svc.Enabled {
-				names = append(names, svc.ServiceName)
+// getServiceAccessDetails returns detailed service access information
+func (h *PortalSessionHandler) getServiceAccessDetails(cfg *config.ApplicationConfig, clientIP netip.Addr, sess *session.Session) []map[string]interface{} {
+	serviceAccessList := []map[string]interface{}{}
+
+	// Check base IP allowlist status
+	_, baseReason := h.ipAllowListManager.IsIPAllowed(clientIP)
+
+	for _, service := range cfg.ProtectedServices {
+		if !service.Enabled {
+			continue
+		}
+
+		serviceAccess := map[string]interface{}{
+			"service_id":   service.ServiceID,
+			"service_name": service.ServiceName,
+			"description":  service.Description,
+		}
+
+		accessGranted := false
+		accessReasons := []map[string]string{}
+
+		// 1. Check if IP is allowed via permanent IP range
+		if baseReason == "permanent" {
+			accessGranted = true
+			accessReasons = append(accessReasons, map[string]string{
+				"method":      "permanent_ip_range",
+				"description": "Your IP is in the permanently allowed IP ranges (unrestricted access)",
+			})
+		}
+
+		// 2. Check if IP is allowed via DNS hostname
+		if baseReason == "dns_resolved" {
+			accessGranted = true
+			accessReasons = append(accessReasons, map[string]string{
+				"method":      "dynamic_dns_hostname",
+				"description": "Your IP matches an allowed dynamic DNS hostname (unrestricted access)",
+			})
+		}
+
+		// 3. Check session-based access
+		if sess.IsIPAllowed(clientIP) {
+			// Check if user has access to this specific service
+			hasServiceAccess := len(sess.AllowedServiceIDs) == 0 // Empty = all services
+			if !hasServiceAccess {
+				for _, allowedID := range sess.AllowedServiceIDs {
+					if allowedID == service.ServiceID {
+						hasServiceAccess = true
+						break
+					}
+				}
+			}
+
+			if hasServiceAccess {
+				accessGranted = true
+				sessionScope := "all services"
+				if len(sess.AllowedServiceIDs) > 0 {
+					sessionScope = "specific services only"
+				}
+				accessReasons = append(accessReasons, map[string]string{
+					"method":      "authenticated_session",
+					"description": "Session access (user: " + sess.Username + ", scope: " + sessionScope + ")",
+				})
 			}
 		}
-		return names
+
+		serviceAccess["access_granted"] = accessGranted
+		serviceAccess["access_reasons"] = accessReasons
+
+		if !accessGranted {
+			serviceAccess["access_denied_reason"] = "No access method grants permission to this service"
+		}
+
+		serviceAccessList = append(serviceAccessList, serviceAccess)
 	}
 
-	// Return specific service names
-	names := []string{}
-	for _, allowedID := range allowedServiceIDs {
-		for _, svc := range cfg.ProtectedServices {
-			if svc.ServiceID == allowedID && svc.Enabled {
-				names = append(names, svc.ServiceName)
-				break
-			}
-		}
-	}
-	return names
+	return serviceAccessList
 }
 
 // HandleLogout handles POST /api/portal/session/logout

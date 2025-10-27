@@ -26,6 +26,7 @@ type TCPProxy struct {
 	connCount        int64
 	activeConnCount  int32 // Current active connections
 	maxConns         int32 // Maximum allowed concurrent connections
+	circuitBreaker   *CircuitBreaker
 	mu               sync.Mutex
 }
 
@@ -38,6 +39,7 @@ func NewTCPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipall
 		ctx:              ctx,
 		cancel:           cancel,
 		maxConns:         int32(maxConnections),
+		circuitBreaker:   NewCircuitBreaker(service.ServiceName, 5, 30*time.Second, 3),
 	}
 }
 
@@ -94,12 +96,12 @@ func (p *TCPProxy) acceptLoop() {
 
 		atomic.AddInt32(&p.activeConnCount, 1)
 		p.activeConns.Add(1)
-		go p.handleConnection(conn)
+		go p.handleConnection(p.ctx, conn)
 	}
 }
 
-// handleConnection handles a single TCP connection
-func (p *TCPProxy) handleConnection(clientConn net.Conn) {
+// handleConnection handles a single TCP connection with context-aware cancellation
+func (p *TCPProxy) handleConnection(ctx context.Context, clientConn net.Conn) {
 	defer func() {
 		p.activeConns.Done()
 		atomic.AddInt32(&p.activeConnCount, -1)
@@ -127,17 +129,32 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 		return
 	}
 
+	// Check circuit breaker
+	if !p.circuitBreaker.Allow() {
+		log.Warn().
+			Str("client_ip", clientIP.String()).
+			Str("service", p.service.ServiceName).
+			Str("circuit_state", p.circuitBreaker.GetState().String()).
+			Msg("Connection denied: circuit breaker is open")
+		return
+	}
+
 	// Connect to backend
 	backendAddr := net.JoinHostPort(p.service.BackendTargetHost, fmt.Sprintf("%d", p.service.BackendTargetPort))
 	backendConn, err := net.DialTimeout("tcp", backendAddr, 10*time.Second)
 	if err != nil {
+		p.circuitBreaker.RecordFailure()
 		log.Error().
 			Err(err).
 			Str("backend", backendAddr).
+			Str("circuit_state", p.circuitBreaker.GetState().String()).
 			Msg("Failed to connect to backend")
 		return
 	}
 	defer backendConn.Close()
+
+	// Record success
+	p.circuitBreaker.RecordSuccess()
 
 	log.Info().
 		Str("client_ip", clientIP.String()).
@@ -151,21 +168,44 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 	connID := p.connCount
 	p.mu.Unlock()
 
-	// Bidirectional copy
+	// Bidirectional copy with context awareness and buffer pooling
 	errChan := make(chan error, 2)
+	done := make(chan struct{})
+
+	// Get buffers from pool
+	clientToBackendBuf := getTCPBuffer()
+	backendToClientBuf := getTCPBuffer()
+	defer putTCPBuffer(clientToBackendBuf)
+	defer putTCPBuffer(backendToClientBuf)
 
 	go func() {
-		_, err := io.Copy(backendConn, clientConn)
+		_, err := io.CopyBuffer(backendConn, clientConn, *clientToBackendBuf)
 		errChan <- err
 	}()
 
 	go func() {
-		_, err := io.Copy(clientConn, backendConn)
+		_, err := io.CopyBuffer(clientConn, backendConn, *backendToClientBuf)
 		errChan <- err
 	}()
 
-	// Wait for either direction to close
-	<-errChan
+	// Wait for either direction to close or context cancellation
+	go func() {
+		<-errChan
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Normal completion - one direction finished
+	case <-ctx.Done():
+		// Context cancelled - graceful shutdown
+		log.Debug().
+			Int64("conn_id", connID).
+			Str("client_ip", clientIP.String()).
+			Str("service", p.service.ServiceName).
+			Msg("TCP connection cancelled due to shutdown")
+		return
+	}
 
 	log.Debug().
 		Int64("conn_id", connID).
@@ -215,12 +255,15 @@ func (p *TCPProxy) GetStats() map[string]interface{} {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	return map[string]interface{}{
+	stats := map[string]interface{}{
 		"total_connections":  p.connCount,
 		"active_connections": atomic.LoadInt32(&p.activeConnCount),
 		"max_connections":    p.maxConns,
 		"service_name":       p.service.ServiceName,
 		"listen_port":        p.service.ProxyListenPortStart,
 		"backend_addr":       fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPort),
+		"circuit_breaker":    p.circuitBreaker.GetStats(),
 	}
+
+	return stats
 }

@@ -133,9 +133,7 @@
 			configStore.setConfig(data.data);
 			configStore.setError('');
 		} catch (err) {
-			configStore.setError(
-				err instanceof Error ? err.message : 'Failed to load configuration'
-			);
+			configStore.setError(err instanceof Error ? err.message : 'Failed to load configuration');
 		} finally {
 			configStore.setLoading(false);
 		}
@@ -178,15 +176,13 @@
 			configStore.setConfig(data.data);
 			configStore.setSaveSuccess(true);
 			configStore.setError('');
-			
+
 			toaster.success({
 				title: 'Configuration Saved',
 				description: 'All changes have been saved successfully'
 			});
 		} catch (err) {
-			configStore.setError(
-				err instanceof Error ? err.message : 'Failed to save configuration'
-			);
+			configStore.setError(err instanceof Error ? err.message : 'Failed to save configuration');
 		} finally {
 			configStore.setSaving(false);
 		}
@@ -313,7 +309,11 @@
 
 <div class="mx-auto max-w-7xl px-4 py-8">
 	<!-- Header -->
-	<PageHeader title="Admin Dashboard" subtitle="Manage sessions and system configuration" icon={Shield}>
+	<PageHeader
+		title="Admin Dashboard"
+		subtitle="Manage sessions and system configuration"
+		icon={Shield}
+	>
 		<button
 			onclick={handleLogout}
 			class="bg-error hover:bg-error-hover focus:ring-error focus:ring-offset-base-100 flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2"
@@ -528,70 +528,75 @@
 						>
 							<Upload class="h-4 w-4" />
 							Import Config JSON
-				</button>
-			</div>
-
-			<!-- Save/Cancel Actions - Animated Floating Banner -->
-			<div class="relative">
-				{#if configStore.hasChanges}
-					<div
-						class="border-primary bg-primary sticky top-4 z-10 flex items-center justify-between rounded-lg border-2 p-4 shadow-2xl animate-in slide-in-from-top-5 fade-in duration-300"
-						style="animation: slideDown 0.3s ease-out;"
-					>
-						<div class="flex items-center gap-2">
-							<svg
-								class="h-5 w-5 text-white animate-pulse"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke="currentColor"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-								/>
-							</svg>
-							<p class="text-sm font-semibold text-white">
-								You have unsaved changes ({configStore.dirtyFieldCount} field{configStore.dirtyFieldCount ===
-								1
-									? ''
-									: 's'})
-							</p>
-						</div>
-						<div class="flex gap-2">
-							<button
-								onclick={cancelConfigChanges}
-								class="flex items-center gap-2 rounded-lg bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/30"
-							>
-								<X class="h-4 w-4" />
-								Cancel
-							</button>
-							<button
-								onclick={saveConfig}
-								disabled={configStore.isSaving}
-								class="text-primary flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold transition-colors hover:bg-gray-100 disabled:opacity-50"
-							>
-								{#if configStore.isSaving}
-									<div
-										class="border-primary h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
-									></div>
-								{:else}
-									<Save class="h-4 w-4" />
-								{/if}
-								Save Configuration
-							</button>
-						</div>
+						</button>
 					</div>
-				{/if}
-			</div>					{#if configStore.error}
+
+					<!-- Save/Cancel Actions - Animated Floating Banner -->
+					<div class="relative">
+						{#if configStore.hasChanges}
+							<div
+								class="border-primary bg-primary animate-in slide-in-from-top-5 fade-in sticky top-4 z-10 flex items-center justify-between rounded-lg border-2 p-4 shadow-2xl duration-300"
+								style="animation: slideDown 0.3s ease-out;"
+							>
+								<div class="flex items-center gap-2">
+									<svg
+										class="h-5 w-5 animate-pulse text-white"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+										/>
+									</svg>
+									<p class="text-sm font-semibold text-white">
+										You have unsaved changes ({configStore.dirtyFieldCount} field{configStore.dirtyFieldCount ===
+										1
+											? ''
+											: 's'})
+									</p>
+								</div>
+								<div class="flex gap-2">
+									<button
+										onclick={cancelConfigChanges}
+										class="flex items-center gap-2 rounded-lg bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/30"
+									>
+										<X class="h-4 w-4" />
+										Cancel
+									</button>
+									<button
+										onclick={saveConfig}
+										disabled={configStore.isSaving}
+										class="text-primary flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold transition-colors hover:bg-gray-100 disabled:opacity-50"
+									>
+										{#if configStore.isSaving}
+											<div
+												class="border-primary h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
+											></div>
+										{:else}
+											<Save class="h-4 w-4" />
+										{/if}
+										Save Configuration
+									</button>
+								</div>
+							</div>
+						{/if}
+					</div>
+					{#if configStore.error}
 						<div class="border-error/30 bg-error/5 rounded-lg border p-3">
 							<p class="text-error text-sm">{configStore.error}</p>
 						</div>
 					{/if}
 
 					<!-- Nested Tabs for Configuration Sections -->
-					<Tabs.Root value={currentConfigTab} onValueChange={(e) => updateConfigTab(e.value)} class="w-full">
+					<Tabs.Root
+						value={currentConfigTab}
+						onValueChange={(e) => updateConfigTab(e.value)}
+						class="w-full"
+					>
 						<Tabs.List class="border-border mb-6 flex gap-1 border-b">
 							<Tabs.Trigger
 								value="users"
@@ -721,7 +726,9 @@
 				</Dialog.Title>
 
 				<p class="text-base-content mb-6 text-sm">
-					Are you sure you want to terminate the session for <strong>{sessionToTerminate.username}</strong>?
+					Are you sure you want to terminate the session for <strong
+						>{sessionToTerminate.username}</strong
+					>?
 					<br />
 					<span class="text-base-muted mt-2 block text-xs">
 						IP: {sessionToTerminate.authenticated_ip}
@@ -753,7 +760,16 @@
 <!-- Toast Notifications -->
 <Toaster {toaster}>
 	{#snippet children(toast)}
-		<Toast.Root class="bg-base-100 border-border min-w-[320px] rounded-lg border-2 p-4 shadow-lg {toast().type === 'error' ? 'border-error' : toast().type === 'success' ? 'border-success' : toast().type === 'warning' ? 'border-warning' : 'border-info'}">
+		<Toast.Root
+			class="bg-base-100 border-border min-w-[320px] rounded-lg border-2 p-4 shadow-lg {toast()
+				.type === 'error'
+				? 'border-error'
+				: toast().type === 'success'
+					? 'border-success'
+					: toast().type === 'warning'
+						? 'border-warning'
+						: 'border-info'}"
+		>
 			<div class="flex items-start gap-3">
 				{#if toast().type === 'success'}
 					<CircleCheck class="text-success h-5 w-5 shrink-0" />

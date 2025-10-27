@@ -58,7 +58,7 @@ func (l *Loader) reload() error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			log.Warn().Str("path", l.configFilePath).Msg("Config file not found, creating with defaults")
-			
+
 			// Create config file with defaults
 			if err := l.createDefaultConfigFile(cfg); err != nil {
 				log.Warn().Err(err).Msg("Failed to create default config file, continuing with in-memory defaults")

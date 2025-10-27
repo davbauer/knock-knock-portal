@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,24 +14,29 @@ import (
 // Manager manages user sessions
 type Manager struct {
 	sessions          sync.Map // map[sessionID]*Session
-	sessionsByIP      sync.Map // map[string][]string (IP -> sessionIDs)
-	sessionsByUserID  sync.Map // map[string][]string (userID -> sessionIDs)
+	sessionsByIP      sync.Map // map[string]*sync.Map (IP -> map[sessionID]bool for O(1) operations)
+	sessionsByUserID  sync.Map // map[string]*sync.Map (userID -> map[sessionID]bool for O(1) operations)
 	defaultDuration   time.Duration
 	maxDuration       *time.Duration
 	autoExtendEnabled bool
 	cleanupInterval   time.Duration
 	cleanupTicker     *time.Ticker
 	stopChan          chan struct{}
+	maxSessions       int32 // Maximum allowed concurrent sessions (0 = unlimited)
+	currentSessions   int32 // Current active session count
 }
 
 // NewManager creates a new session manager
-func NewManager(defaultDuration time.Duration, maxDuration *time.Duration, autoExtend bool, cleanupInterval time.Duration) *Manager {
+// maxSessions: maximum allowed concurrent sessions (0 = unlimited)
+func NewManager(defaultDuration time.Duration, maxDuration *time.Duration, autoExtend bool, cleanupInterval time.Duration, maxSessions int32) *Manager {
 	m := &Manager{
 		defaultDuration:   defaultDuration,
 		maxDuration:       maxDuration,
 		autoExtendEnabled: autoExtend,
 		cleanupInterval:   cleanupInterval,
 		stopChan:          make(chan struct{}),
+		maxSessions:       maxSessions,
+		currentSessions:   0,
 	}
 
 	// Start cleanup goroutine
@@ -41,6 +47,21 @@ func NewManager(defaultDuration time.Duration, maxDuration *time.Duration, autoE
 
 // CreateSession creates a new session
 func (m *Manager) CreateSession(userID, username string, clientIP netip.Addr, allowedServiceIDs []string) (*Session, error) {
+	// Check session limit if configured (0 = unlimited)
+	if m.maxSessions > 0 {
+		current := atomic.LoadInt32(&m.currentSessions)
+		if current >= m.maxSessions {
+			return nil, fmt.Errorf("maximum sessions (%d) reached", m.maxSessions)
+		}
+		
+		// Atomic increment with double-check
+		newCount := atomic.AddInt32(&m.currentSessions, 1)
+		if newCount > m.maxSessions {
+			atomic.AddInt32(&m.currentSessions, -1)
+			return nil, fmt.Errorf("maximum sessions (%d) reached", m.maxSessions)
+		}
+	}
+
 	sessionID := uuid.New().String()
 	now := time.Now()
 
@@ -94,19 +115,26 @@ func (m *Manager) GetSessionByID(sessionID string) (*Session, error) {
 
 // GetSessionByIP retrieves active sessions for an IP address
 func (m *Manager) GetSessionByIP(ip netip.Addr) (*Session, bool) {
-	value, ok := m.sessionsByIP.Load(ip.String())
+	ipStr := ip.String()
+	value, ok := m.sessionsByIP.Load(ipStr)
 	if !ok {
 		return nil, false
 	}
 
-	sessionIDs := value.([]string)
-	for _, sessionID := range sessionIDs {
-		if session, err := m.GetSessionByID(sessionID); err == nil {
-			return session, true
-		}
-	}
+	sessionMap := value.(*sync.Map)
+	var foundSession *Session
 
-	return nil, false
+	// Iterate through session IDs for this IP
+	sessionMap.Range(func(key, _ interface{}) bool {
+		sessionID := key.(string)
+		if session, err := m.GetSessionByID(sessionID); err == nil {
+			foundSession = session
+			return false // Stop iteration
+		}
+		return true // Continue iteration
+	})
+
+	return foundSession, foundSession != nil
 }
 
 // RecordActivity records session activity and extends if configured
@@ -147,16 +175,16 @@ func (m *Manager) AddIPToSession(sessionID string, clientIP netip.Addr) error {
 	if session.AddAllowedIP(clientIP) {
 		// Update session
 		m.sessions.Store(sessionID, session)
-		
+
 		// Add to IP index
 		m.addToIPIndex(clientIP.String(), sessionID)
-		
+
 		log.Info().
 			Str("session_id", sessionID).
 			Str("user_id", session.UserID).
 			Str("new_ip", clientIP.String()).
 			Msg("IP address added to session")
-		
+
 		return nil
 	}
 
@@ -174,12 +202,17 @@ func (m *Manager) TerminateSession(sessionID string) error {
 
 	// Remove from all indices
 	m.sessions.Delete(sessionID)
-	
+
+	// Decrement session counter if limit is configured
+	if m.maxSessions > 0 {
+		atomic.AddInt32(&m.currentSessions, -1)
+	}
+
 	// Remove from IP index for all authenticated IPs
 	for _, ip := range session.AuthenticatedIPAddresses {
 		m.removeFromIPIndex(ip.String(), sessionID)
 	}
-	
+
 	m.removeFromUserIDIndex(session.UserID, sessionID)
 
 	log.Info().
@@ -256,10 +289,12 @@ func (m *Manager) Close() {
 // Helper methods for indexing
 
 func (m *Manager) addToIPIndex(ip, sessionID string) {
-	value, _ := m.sessionsByIP.LoadOrStore(ip, []string{})
-	sessionIDs := value.([]string)
-	sessionIDs = append(sessionIDs, sessionID)
-	m.sessionsByIP.Store(ip, sessionIDs)
+	// Create or load the session map for this IP
+	value, _ := m.sessionsByIP.LoadOrStore(ip, &sync.Map{})
+	sessionMap := value.(*sync.Map)
+
+	// Add session ID to the map (O(1) operation)
+	sessionMap.Store(sessionID, true)
 }
 
 func (m *Manager) removeFromIPIndex(ip, sessionID string) {
@@ -268,26 +303,29 @@ func (m *Manager) removeFromIPIndex(ip, sessionID string) {
 		return
 	}
 
-	sessionIDs := value.([]string)
-	newSessionIDs := []string{}
-	for _, id := range sessionIDs {
-		if id != sessionID {
-			newSessionIDs = append(newSessionIDs, id)
-		}
-	}
+	sessionMap := value.(*sync.Map)
+	sessionMap.Delete(sessionID)
 
-	if len(newSessionIDs) > 0 {
-		m.sessionsByIP.Store(ip, newSessionIDs)
-	} else {
-		m.sessionsByIP.Delete(ip)
+	// Atomic check-and-delete to prevent race condition
+	hasEntries := false
+	sessionMap.Range(func(_, _ interface{}) bool {
+		hasEntries = true
+		return false // Stop iteration, we found an entry
+	})
+
+	if !hasEntries {
+		// Use LoadAndDelete for atomic operation to prevent TOCTOU race
+		m.sessionsByIP.LoadAndDelete(ip)
 	}
 }
 
 func (m *Manager) addToUserIDIndex(userID, sessionID string) {
-	value, _ := m.sessionsByUserID.LoadOrStore(userID, []string{})
-	sessionIDs := value.([]string)
-	sessionIDs = append(sessionIDs, sessionID)
-	m.sessionsByUserID.Store(userID, sessionIDs)
+	// Create or load the session map for this user
+	value, _ := m.sessionsByUserID.LoadOrStore(userID, &sync.Map{})
+	sessionMap := value.(*sync.Map)
+
+	// Add session ID to the map (O(1) operation)
+	sessionMap.Store(sessionID, true)
 }
 
 func (m *Manager) removeFromUserIDIndex(userID, sessionID string) {
@@ -296,17 +334,18 @@ func (m *Manager) removeFromUserIDIndex(userID, sessionID string) {
 		return
 	}
 
-	sessionIDs := value.([]string)
-	newSessionIDs := []string{}
-	for _, id := range sessionIDs {
-		if id != sessionID {
-			newSessionIDs = append(newSessionIDs, id)
-		}
-	}
+	sessionMap := value.(*sync.Map)
+	sessionMap.Delete(sessionID)
 
-	if len(newSessionIDs) > 0 {
-		m.sessionsByUserID.Store(userID, newSessionIDs)
-	} else {
-		m.sessionsByUserID.Delete(userID)
+	// Atomic check-and-delete to prevent race condition
+	hasEntries := false
+	sessionMap.Range(func(_, _ interface{}) bool {
+		hasEntries = true
+		return false // Stop iteration, we found an entry
+	})
+
+	if !hasEntries {
+		// Use LoadAndDelete for atomic operation to prevent TOCTOU race
+		m.sessionsByUserID.LoadAndDelete(userID)
 	}
 }

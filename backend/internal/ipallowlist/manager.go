@@ -12,7 +12,8 @@ import (
 
 // Manager manages the IP allowlist
 type Manager struct {
-	exactIPEntries sync.Map // map[string]*Entry (IP string -> Entry)
+	exactIPEntries sync.Map // map[string]*Entry (IP string -> Entry) - Permanent + Session IPs only
+	dnsIPEntries   sync.Map // map[string]*Entry (IP string -> Entry) - DNS-resolved IPs only
 	cidrEntries    []*Entry
 	cidrMutex      sync.RWMutex
 	matcher        *Matcher
@@ -104,10 +105,12 @@ func (m *Manager) startDNSRefresh() {
 func (m *Manager) updateDNSEntries(results map[string][]netip.Addr) {
 	now := time.Now()
 
-	// Remove old DNS entries
-	m.removeEntriesByType(EntryTypeDNSResolved)
+	// O(1) operation: Clear the entire DNS map by replacing it
+	// This is much faster than removeEntriesByType() which scans all entries
+	m.dnsIPEntries = sync.Map{}
 
-	// Add new DNS entries
+	// Add new DNS entries to dedicated DNS map
+	totalIPs := 0
 	for hostname, addrs := range results {
 		for _, addr := range addrs {
 			entry := &Entry{
@@ -119,12 +122,21 @@ func (m *Manager) updateDNSEntries(results map[string][]netip.Addr) {
 				OriginalHostname: hostname,
 			}
 
-			m.exactIPEntries.Store(addr.String(), entry)
+			m.dnsIPEntries.Store(addr.String(), entry)
+			totalIPs++
+
+			log.Info().
+				Str("hostname", hostname).
+				Str("ip", addr.String()).
+				Bool("ipv4", addr.Is4()).
+				Bool("ipv6", addr.Is6()).
+				Msg("Added DNS-resolved IP to allowlist")
 		}
 	}
 
-	log.Debug().
+	log.Info().
 		Int("hostnames", len(results)).
+		Int("total_ips", totalIPs).
 		Msg("Updated DNS-resolved IP entries")
 }
 
@@ -180,14 +192,38 @@ func (m *Manager) RemoveSessionIP(sessionID string) {
 
 // IsIPAllowed checks if an IP is allowed
 func (m *Manager) IsIPAllowed(ip netip.Addr) (allowed bool, reason string) {
-	// Fast path: exact IP lookup
-	if value, ok := m.exactIPEntries.Load(ip.String()); ok {
+	ipStr := ip.String()
+
+	// Fast path 1: Check DNS-resolved IPs
+	if value, ok := m.dnsIPEntries.Load(ipStr); ok {
+		entry := value.(*Entry)
+		if !entry.IsExpired() {
+			log.Info().
+				Str("ip", ipStr).
+				Str("source_type", string(entry.SourceType)).
+				Str("original_hostname", entry.OriginalHostname).
+				Msg("IP allowed - DNS-resolved match")
+			return true, string(entry.SourceType)
+		}
+		// DNS entries shouldn't expire, but handle it just in case
+		go m.dnsIPEntries.Delete(ipStr)
+	}
+
+	// Fast path 2: Check permanent + session IPs
+	if value, ok := m.exactIPEntries.Load(ipStr); ok {
 		entry := value.(*Entry)
 		if entry.IsExpired() {
 			// Remove expired entry in background to avoid blocking
-			go m.exactIPEntries.Delete(ip.String())
+			go m.exactIPEntries.Delete(ipStr)
+			log.Debug().
+				Str("ip", ipStr).
+				Msg("IP found in allowlist but entry is expired")
 			// Continue to check CIDR ranges
 		} else {
+			log.Info().
+				Str("ip", ipStr).
+				Str("source_type", string(entry.SourceType)).
+				Msg("IP allowed - exact match")
 			return true, string(entry.SourceType)
 		}
 	}
@@ -198,10 +234,18 @@ func (m *Manager) IsIPAllowed(ip netip.Addr) (allowed bool, reason string) {
 
 	for _, entry := range m.cidrEntries {
 		if !entry.IsExpired() && m.matcher.MatchesIP(ip, entry) {
+			log.Info().
+				Str("ip", ipStr).
+				Str("source_type", string(entry.SourceType)).
+				Str("cidr", entry.IPPrefix.String()).
+				Msg("IP allowed - CIDR match")
 			return true, string(entry.SourceType)
 		}
 	}
 
+	log.Debug().
+		Str("ip", ipStr).
+		Msg("IP not allowed - no match found")
 	return false, "not_allowed"
 }
 
@@ -265,14 +309,21 @@ func (m *Manager) GetAllowlistStats() map[string]interface{} {
 		return true
 	})
 
+	dnsCount := 0
+	m.dnsIPEntries.Range(func(key, value interface{}) bool {
+		dnsCount++
+		return true
+	})
+
 	m.cidrMutex.RLock()
 	cidrCount := len(m.cidrEntries)
 	m.cidrMutex.RUnlock()
 
 	return map[string]interface{}{
-		"exact_ip_count": exactCount,
+		"exact_ip_count": exactCount, // Permanent + Session IPs
+		"dns_ip_count":   dnsCount,   // DNS-resolved IPs
 		"cidr_count":     cidrCount,
-		"total_count":    exactCount + cidrCount,
+		"total_count":    exactCount + dnsCount + cidrCount,
 	}
 }
 

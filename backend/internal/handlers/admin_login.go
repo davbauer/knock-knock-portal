@@ -30,7 +30,7 @@ func NewAdminLoginHandler(
 	return &AdminLoginHandler{
 		passwordVerifier: passwordVerifier,
 		jwtManager:       jwtManager,
-		rateLimiter:      auth.NewRateLimiter(5, 3), // 5/min, burst 3
+		rateLimiter:      auth.NewRateLimiter(5, 3, 1000), // 5/min, burst 3, max 1000 IPs
 	}
 }
 

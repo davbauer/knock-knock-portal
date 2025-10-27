@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/davbauer/knock-knock-portal/internal/config"
@@ -30,11 +31,13 @@ type UDPProxy struct {
 
 // udpSession represents a pseudo-connection for UDP traffic
 type udpSession struct {
-	clientAddr   *net.UDPAddr
-	backendConn  *net.UDPConn
-	backendAddr  *net.UDPAddr // Expected backend address for validation
-	lastActivity time.Time
-	mu           sync.Mutex
+	clientAddr      *net.UDPAddr
+	backendConn     *net.UDPConn
+	backendAddr     *net.UDPAddr // Expected backend address for validation
+	lastActivity    time.Time
+	spoofAttempts   int32 // Counter for spoof detection
+	maxSpoofAttempts int32 // Maximum allowed spoof attempts before termination
+	mu              sync.Mutex
 }
 
 // NewUDPProxy creates a new UDP proxy
@@ -84,7 +87,9 @@ func (p *UDPProxy) Start() error {
 func (p *UDPProxy) receiveLoop() {
 	defer p.wg.Done()
 
-	buffer := make([]byte, 65507) // Max UDP packet size
+	bufPtr := getUDPBuffer()
+	defer putUDPBuffer(bufPtr)
+	buffer := *bufPtr
 
 	for {
 		select {
@@ -191,10 +196,12 @@ func (p *UDPProxy) getOrCreateSession(clientAddr *net.UDPAddr) (*udpSession, err
 	}
 
 	session = &udpSession{
-		clientAddr:   clientAddr,
-		backendConn:  backendConn,
-		backendAddr:  backendUDPAddr,
-		lastActivity: time.Now(),
+		clientAddr:       clientAddr,
+		backendConn:      backendConn,
+		backendAddr:      backendUDPAddr,
+		lastActivity:     time.Now(),
+		spoofAttempts:    0,
+		maxSpoofAttempts: 5, // Terminate after 5 spoof attempts
 	}
 
 	p.sessionsMu.Lock()
@@ -208,8 +215,8 @@ func (p *UDPProxy) getOrCreateSession(clientAddr *net.UDPAddr) (*udpSession, err
 		Int("active_sessions", int(currentSessions)+1).
 		Msg("Created UDP session")
 
-	// Start receiving responses from backend
-	go p.receiveFromBackend(session)
+	// Start receiving responses from backend with context
+	go p.receiveFromBackend(p.ctx, session)
 
 	return session, nil
 }
@@ -230,12 +237,14 @@ func (p *UDPProxy) forwardToBackend(session *udpSession, data []byte) {
 }
 
 // receiveFromBackend receives responses from the backend and forwards to client
-func (p *UDPProxy) receiveFromBackend(session *udpSession) {
-	buffer := make([]byte, 65507)
+func (p *UDPProxy) receiveFromBackend(ctx context.Context, session *udpSession) {
+	bufPtr := getUDPBuffer()
+	defer putUDPBuffer(bufPtr)
+	buffer := *bufPtr
 
 	for {
 		select {
-		case <-p.ctx.Done():
+		case <-ctx.Done():
 			return
 		default:
 		}
@@ -263,12 +272,38 @@ func (p *UDPProxy) receiveFromBackend(session *udpSession) {
 
 		// SECURITY: Validate response is from expected backend to prevent amplification attacks
 		if addr.String() != expectedBackend.String() {
+			// Increment spoof counter atomically
+			attempts := atomic.AddInt32(&session.spoofAttempts, 1)
+			
 			log.Warn().
 				Str("expected_backend", expectedBackend.String()).
 				Str("actual_source", addr.String()).
 				Str("client_addr", session.clientAddr.String()).
 				Str("service", p.service.ServiceName).
+				Int32("spoof_attempts", attempts).
 				Msg("UDP response from unexpected source - possible spoofing/amplification attack attempt")
+			
+			// Terminate session after max spoof attempts to prevent amplification
+			if attempts >= session.maxSpoofAttempts {
+				log.Error().
+					Str("client_addr", session.clientAddr.String()).
+					Str("service", p.service.ServiceName).
+					Int32("spoof_attempts", attempts).
+					Msg("Maximum spoof attempts reached - terminating UDP session for security")
+				
+				// Close backend connection to terminate the session
+				session.mu.Lock()
+				session.backendConn.Close()
+				session.mu.Unlock()
+				
+				// Remove from sessions map
+				p.sessionsMu.Lock()
+				delete(p.sessions, session.clientAddr.String())
+				p.sessionsMu.Unlock()
+				
+				return
+			}
+			
 			continue // Drop the packet
 		}
 

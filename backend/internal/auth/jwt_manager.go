@@ -36,9 +36,23 @@ func NewJWTManager() (*JWTManager, error) {
 		return nil, fmt.Errorf("JWT_SIGNING_SECRET_KEY environment variable is required")
 	}
 
+	// Validate key strength
+	if err := validateJWTKey(signingKey); err != nil {
+		return nil, fmt.Errorf("JWT signing key validation failed: %w", err)
+	}
+
 	return &JWTManager{
 		signingKey: []byte(signingKey),
 	}, nil
+}
+
+// validateJWTKey validates the minimum length of the JWT signing key
+func validateJWTKey(key string) error {
+	// Minimum length check (256 bits = 32 bytes for HS256)
+	if len(key) < 32 {
+		return fmt.Errorf("JWT signing key must be at least 32 characters long (got %d)", len(key))
+	}
+	return nil
 }
 
 // GeneratePortalToken generates a JWT token for a portal user

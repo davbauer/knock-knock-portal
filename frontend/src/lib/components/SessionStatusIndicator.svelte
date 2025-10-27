@@ -135,7 +135,7 @@
 	<Dialog.Backdrop class="fixed inset-0 bg-black/50 backdrop-blur-sm" />
 	<Dialog.Positioner class="fixed inset-0 z-50 flex items-center justify-center p-4">
 		<Dialog.Content
-			class="bg-base-100 w-full max-w-md rounded-lg border border-base-300 p-6 shadow-xl"
+			class="bg-base-100 border-base-300 w-full max-w-md rounded-lg border p-6 shadow-xl"
 		>
 			<div class="mb-4 flex items-start gap-3">
 				<div class="bg-warning/10 rounded-lg p-2">
@@ -169,7 +169,7 @@
 			<div class="flex gap-2">
 				<button
 					onclick={() => (showIPChangeDialog = false)}
-					class="hover:bg-base-200 flex-1 rounded-lg border border-base-300 px-4 py-2 text-sm font-medium transition-colors"
+					class="hover:bg-base-200 border-base-300 flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
 				>
 					Cancel
 				</button>
@@ -210,7 +210,9 @@
 		class="hover:bg-base-200 flex items-center gap-2 rounded-lg px-3 py-2 transition-colors"
 	>
 		{#if isLoading}
-			<div class="h-5 w-5 animate-spin rounded-full border-2 border-base-content/20 border-t-primary"></div>
+			<div
+				class="border-base-content/20 border-t-primary h-5 w-5 animate-spin rounded-full border-2"
+			></div>
 		{:else}
 			{@const Icon = getStatusIcon()}
 			<Icon class={`h-5 w-5 ${getStatusColor()}`} />
@@ -221,9 +223,7 @@
 	</Popover.Trigger>
 
 	<Popover.Positioner>
-		<Popover.Content
-			class="bg-base-100 z-50 w-80 rounded-lg border border-base-300 p-4 shadow-xl"
-		>
+		<Popover.Content class="bg-base-100 border-base-300 z-50 w-80 rounded-lg border p-4 shadow-xl">
 			<Popover.Arrow>
 				<Popover.ArrowTip class="border-base-300 border-l border-t" />
 			</Popover.Arrow>

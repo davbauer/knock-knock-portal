@@ -22,23 +22,36 @@ func NewDNSResolver() *DNSResolver {
 }
 
 // ResolveHostname resolves a hostname to IP addresses (both IPv4 and IPv6)
+// This handles CNAME chains automatically - the net.Resolver follows CNAMEs
+// and returns the final resolved IPs (both A and AAAA records)
 func (r *DNSResolver) ResolveHostname(ctx context.Context, hostname string) ([]netip.Addr, error) {
+	// LookupIP follows CNAME chains automatically and returns all IPs
 	ips, err := r.resolver.LookupIP(ctx, "ip", hostname)
 	if err != nil {
 		return nil, err
 	}
 
 	addrs := []netip.Addr{}
+	ipv4Count := 0
+	ipv6Count := 0
+
 	for _, ip := range ips {
 		if addr, ok := netip.AddrFromSlice(ip); ok {
 			addrs = append(addrs, addr)
+			if addr.Is4() {
+				ipv4Count++
+			} else if addr.Is6() {
+				ipv6Count++
+			}
 		}
 	}
 
-	log.Debug().
+	log.Info().
 		Str("hostname", hostname).
-		Int("count", len(addrs)).
-		Msg("Resolved DNS hostname")
+		Int("total_ips", len(addrs)).
+		Int("ipv4_count", ipv4Count).
+		Int("ipv6_count", ipv6Count).
+		Msg("Resolved DNS hostname (including CNAME chain)")
 
 	return addrs, nil
 }

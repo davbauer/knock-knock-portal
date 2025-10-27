@@ -41,7 +41,7 @@ class ConfigStore {
 	// Update config and track changes
 	updateConfig(updater: (config: Config) => void) {
 		if (!this.state.current) return;
-		
+
 		updater(this.state.current);
 		this.detectChanges();
 	}
@@ -63,7 +63,12 @@ class ConfigStore {
 	private compareObjects(current: unknown, original: unknown, path: string, dirty: Set<string>) {
 		if (current === original) return;
 
-		if (typeof current !== 'object' || current === null || typeof original !== 'object' || original === null) {
+		if (
+			typeof current !== 'object' ||
+			current === null ||
+			typeof original !== 'object' ||
+			original === null
+		) {
 			if (current !== original) {
 				dirty.add(path);
 			}
@@ -81,7 +86,10 @@ class ConfigStore {
 			return;
 		}
 
-		const allKeys = new Set([...Object.keys(current as Record<string, unknown>), ...Object.keys(original as Record<string, unknown>)]);
+		const allKeys = new Set([
+			...Object.keys(current as Record<string, unknown>),
+			...Object.keys(original as Record<string, unknown>)
+		]);
 		for (const key of allKeys) {
 			const newPath = path ? `${path}.${key}` : key;
 			if (!(key in (current as Record<string, unknown>))) {
@@ -89,7 +97,12 @@ class ConfigStore {
 			} else if (!(key in (original as Record<string, unknown>))) {
 				dirty.add(newPath);
 			} else {
-				this.compareObjects((current as Record<string, unknown>)[key], (original as Record<string, unknown>)[key], newPath, dirty);
+				this.compareObjects(
+					(current as Record<string, unknown>)[key],
+					(original as Record<string, unknown>)[key],
+					newPath,
+					dirty
+				);
 			}
 		}
 	}
@@ -113,7 +126,7 @@ class ConfigStore {
 	importFromJSON(jsonString: string): { success: boolean; error?: string } {
 		try {
 			const parsed = JSON.parse(jsonString);
-			
+
 			// Basic validation
 			if (!parsed || typeof parsed !== 'object') {
 				return { success: false, error: 'Invalid configuration format' };
@@ -150,13 +163,13 @@ class ConfigStore {
 	async copyToClipboard(): Promise<{ success: boolean; error?: string }> {
 		try {
 			const json = this.exportToJSON();
-			
+
 			// Try modern clipboard API first
 			if (navigator.clipboard && navigator.clipboard.writeText) {
 				await navigator.clipboard.writeText(json);
 				return { success: true };
 			}
-			
+
 			// Fallback to execCommand for older browsers or non-secure contexts
 			const textArea = document.createElement('textarea');
 			textArea.value = json;
@@ -166,11 +179,11 @@ class ConfigStore {
 			document.body.appendChild(textArea);
 			textArea.focus();
 			textArea.select();
-			
+
 			try {
 				const successful = document.execCommand('copy');
 				document.body.removeChild(textArea);
-				
+
 				if (successful) {
 					return { success: true };
 				} else {

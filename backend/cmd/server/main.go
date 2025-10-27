@@ -69,6 +69,7 @@ func main() {
 		maxDuration,
 		cfg.SessionConfig.AutoExtendSessionOnConnection,
 		time.Duration(cfg.SessionConfig.SessionCleanupIntervalSeconds)*time.Second,
+		int32(cfg.SessionConfig.MaxConcurrentSessions),
 	)
 	defer sessionManager.Close()
 

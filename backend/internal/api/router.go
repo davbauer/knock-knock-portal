@@ -45,6 +45,7 @@ func NewRouter(
 	// Global middleware
 	engine.Use(gin.Recovery())
 	engine.Use(middleware.RequestLogger())
+	engine.Use(middleware.RequestSizeLimiter(1 * 1024 * 1024)) // 1MB limit for request bodies
 
 	// CORS
 	engine.Use(cors.New(cors.Config{
@@ -87,8 +88,8 @@ func (r *Router) setupRoutes() {
 		api.GET("/health", healthHandler.Handle)
 
 		// Connection info endpoint (public, returns client IP and allowlist status)
-		connectionInfoHandler := handlers.NewConnectionInfoHandler(r.allowlistManager)
-		api.GET("/connection-info", connectionInfoHandler.Handle)
+		connectionInfoHandler := handlers.NewConnectionInfoHandler(r.allowlistManager, r.sessionManager, r.configLoader)
+		api.GET("/connection-info", connectionInfoHandler.HandleCheck)
 
 		// Portal API (public/authenticated)
 		portal := api.Group("/portal")
@@ -107,7 +108,7 @@ func (r *Router) setupRoutes() {
 			portal.GET("/suggested-usernames", usernamesHandler.Handle)
 
 			// Authenticated endpoints (require portal JWT)
-			sessionHandler := handlers.NewPortalSessionHandler(r.sessionManager, r.configLoader)
+			sessionHandler := handlers.NewPortalSessionHandler(r.sessionManager, r.configLoader, r.allowlistManager)
 			authenticated := portal.Group("")
 			authenticated.Use(middleware.AuthMiddleware(r.jwtManager, auth.TokenTypePortal))
 			{

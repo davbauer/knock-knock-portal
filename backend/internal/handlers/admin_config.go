@@ -3,9 +3,9 @@ package handlers
 import (
 	"net/http"
 
+	"github.com/davbauer/knock-knock-portal/internal/config"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
-	"github.com/davbauer/knock-knock-portal/internal/config"
 )
 
 type AdminConfigHandler struct {
@@ -21,17 +21,17 @@ func NewAdminConfigHandler(configLoader *config.Loader) *AdminConfigHandler {
 // HandleGetConfig returns the current configuration
 func (h *AdminConfigHandler) HandleGetConfig(c *gin.Context) {
 	cfg := h.configLoader.GetConfig()
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data": cfg,
+		"data":    cfg,
 	})
 }
 
 // HandleUpdateConfig updates the configuration
 func (h *AdminConfigHandler) HandleUpdateConfig(c *gin.Context) {
 	var newConfig config.ApplicationConfig
-	
+
 	if err := c.ShouldBindJSON(&newConfig); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -39,18 +39,18 @@ func (h *AdminConfigHandler) HandleUpdateConfig(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Get the existing config to compare passwords
 	existingConfig := h.configLoader.GetConfig()
-	
+
 	// Hash any new or changed passwords for portal users
 	for i := range newConfig.PortalUserAccounts {
 		user := &newConfig.PortalUserAccounts[i]
-		
+
 		// Check if password was provided and needs hashing
 		// If bcrypt_hashed_password is empty or doesn't start with $2a/$2b (bcrypt prefix), we need to hash it
-		if user.BcryptHashedPassword != "" && 
-		   user.BcryptHashedPassword[0] != '$' {
+		if user.BcryptHashedPassword != "" &&
+			user.BcryptHashedPassword[0] != '$' {
 			// This is a plain text password, hash it
 			hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.BcryptHashedPassword), bcrypt.DefaultCost)
 			if err != nil {
@@ -69,7 +69,7 @@ func (h *AdminConfigHandler) HandleUpdateConfig(c *gin.Context) {
 					break
 				}
 			}
-			
+
 			// If still empty, this is a new user without a password - reject
 			if user.BcryptHashedPassword == "" {
 				c.JSON(http.StatusBadRequest, gin.H{
@@ -80,7 +80,7 @@ func (h *AdminConfigHandler) HandleUpdateConfig(c *gin.Context) {
 			}
 		}
 	}
-	
+
 	// Validate the configuration
 	if err := config.ValidateConfig(&newConfig); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -89,7 +89,7 @@ func (h *AdminConfigHandler) HandleUpdateConfig(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Save the configuration
 	if err := h.configLoader.SaveConfig(&newConfig); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -98,10 +98,10 @@ func (h *AdminConfigHandler) HandleUpdateConfig(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Configuration updated successfully",
-		"data": newConfig,
+		"data":    newConfig,
 	})
 }

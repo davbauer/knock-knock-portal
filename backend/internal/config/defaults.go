@@ -10,6 +10,7 @@ func GetDefaultConfig() *ApplicationConfig {
 			AutoExtendSessionOnConnection: true,
 			MaximumSessionDurationSeconds: &defaultMaxDuration,
 			SessionCleanupIntervalSeconds: 60,
+			MaxConcurrentSessions:         10000, // 0 = unlimited, 10000 = reasonable limit
 		},
 		NetworkAccessControl: NetworkAccessControlConfig{
 			AllowedDynamicDNSHostnames: []string{},

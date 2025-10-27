@@ -24,6 +24,7 @@ type HTTPProxy struct {
 	cancel           context.CancelFunc
 	wg               sync.WaitGroup
 	requestCount     int64
+	circuitBreaker   *CircuitBreaker
 	mu               sync.Mutex
 }
 
@@ -42,6 +43,7 @@ func NewHTTPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipal
 		ctx:              ctx,
 		cancel:           cancel,
 		proxy:            httputil.NewSingleHostReverseProxy(backendURL),
+		circuitBreaker:   NewCircuitBreaker(service.ServiceName, 5, 30*time.Second, 3),
 	}
 
 	// Customize the reverse proxy
@@ -85,6 +87,14 @@ func (p *HTTPProxy) Start() error {
 
 // handleRequest processes incoming HTTP requests
 func (p *HTTPProxy) handleRequest(w http.ResponseWriter, r *http.Request) {
+	// Check if proxy is shutting down
+	select {
+	case <-p.ctx.Done():
+		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+		return
+	default:
+	}
+
 	// Extract client IP
 	clientIP, ok := parseIPFromAddr(r.RemoteAddr)
 	if !ok {
@@ -103,6 +113,18 @@ func (p *HTTPProxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 			Str("reason", reason).
 			Msg("HTTP request denied: IP not in allowlist")
 		http.Error(w, "Access Denied", http.StatusForbidden)
+		return
+	}
+
+	// Check circuit breaker
+	if !p.circuitBreaker.Allow() {
+		log.Warn().
+			Str("client_ip", clientIP.String()).
+			Str("service", p.service.ServiceName).
+			Str("path", r.URL.Path).
+			Str("circuit_state", p.circuitBreaker.GetState().String()).
+			Msg("HTTP request denied: circuit breaker is open")
+		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -126,10 +148,13 @@ func (p *HTTPProxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 // errorHandler handles reverse proxy errors
 func (p *HTTPProxy) errorHandler(w http.ResponseWriter, r *http.Request, err error) {
+	p.circuitBreaker.RecordFailure()
+	
 	log.Error().
 		Err(err).
 		Str("service", p.service.ServiceName).
 		Str("path", r.URL.Path).
+		Str("circuit_state", p.circuitBreaker.GetState().String()).
 		Msg("HTTP proxy error")
 
 	http.Error(w, "Bad Gateway", http.StatusBadGateway)
@@ -137,7 +162,13 @@ func (p *HTTPProxy) errorHandler(w http.ResponseWriter, r *http.Request, err err
 
 // modifyResponse allows modifying the backend response
 func (p *HTTPProxy) modifyResponse(resp *http.Response) error {
-	// Could add custom headers, logging, etc.
+	// Record success for circuit breaker
+	if resp.StatusCode < 500 {
+		p.circuitBreaker.RecordSuccess()
+	} else {
+		// 5xx errors count as failures
+		p.circuitBreaker.RecordFailure()
+	}
 	return nil
 }
 
@@ -172,14 +203,15 @@ func (p *HTTPProxy) Stop() error {
 }
 
 // GetStats returns statistics about the HTTP proxy
-func (p *HTTPProxy) GetStats() map[string]interface{}{
+func (p *HTTPProxy) GetStats() map[string]interface{} {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	return map[string]interface{}{
-		"total_requests": p.requestCount,
-		"service_name":   p.service.ServiceName,
-		"listen_port":    p.service.ProxyListenPortStart,
-		"backend_addr":   fmt.Sprintf("http://%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPort),
+		"total_requests":  p.requestCount,
+		"service_name":    p.service.ServiceName,
+		"listen_port":     p.service.ProxyListenPortStart,
+		"backend_addr":    fmt.Sprintf("http://%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPort),
+		"circuit_breaker": p.circuitBreaker.GetStats(),
 	}
 }

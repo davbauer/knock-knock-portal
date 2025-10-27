@@ -14,7 +14,7 @@ class ThemeStore {
 			}
 			// Apply theme immediately
 			this.applyTheme();
-			
+
 			// Listen for system theme changes
 			window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
 				if (this.current === 'system') {

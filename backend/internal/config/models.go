@@ -16,6 +16,7 @@ type SessionConfiguration struct {
 	AutoExtendSessionOnConnection bool `yaml:"auto_extend_session_on_connection" json:"auto_extend_session_on_connection"`
 	MaximumSessionDurationSeconds *int `yaml:"maximum_session_duration_seconds" json:"maximum_session_duration_seconds"` // nil = unlimited
 	SessionCleanupIntervalSeconds int  `yaml:"session_cleanup_interval_seconds" json:"session_cleanup_interval_seconds"`
+	MaxConcurrentSessions         int  `yaml:"max_concurrent_sessions" json:"max_concurrent_sessions"` // 0 = unlimited
 }
 
 // NetworkAccessControlConfig defines IP allowlist settings
@@ -55,17 +56,17 @@ type PortalUserAccount struct {
 
 // ProtectedServiceConfig defines a service that requires authentication
 type ProtectedServiceConfig struct {
-	ServiceID              string              `yaml:"service_id" json:"service_id"`
-	ServiceName            string              `yaml:"service_name" json:"service_name"`
+	ServiceID            string              `yaml:"service_id" json:"service_id"`
+	ServiceName          string              `yaml:"service_name" json:"service_name"`
 	ProxyListenPortStart int                 `yaml:"proxy_listen_port_start" json:"proxy_listen_port_start"`
 	ProxyListenPortEnd   int                 `yaml:"proxy_listen_port_end" json:"proxy_listen_port_end"`
 	BackendTargetHost    string              `yaml:"backend_target_host" json:"backend_target_host"`
 	BackendTargetPort    int                 `yaml:"backend_target_port" json:"backend_target_port"`
 	TransportProtocol    string              `yaml:"transport_protocol" json:"transport_protocol"` // tcp | udp | both
-	IsHTTPProtocol         bool                `yaml:"is_http_protocol" json:"is_http_protocol"`
-	Enabled                bool                `yaml:"enabled" json:"enabled"`
-	Description            string              `yaml:"description" json:"description"`
-	HTTPConfig             *HTTPProtocolConfig `yaml:"http_config,omitempty" json:"http_config,omitempty"`
+	IsHTTPProtocol       bool                `yaml:"is_http_protocol" json:"is_http_protocol"`
+	Enabled              bool                `yaml:"enabled" json:"enabled"`
+	Description          string              `yaml:"description" json:"description"`
+	HTTPConfig           *HTTPProtocolConfig `yaml:"http_config,omitempty" json:"http_config,omitempty"`
 }
 
 // HTTPProtocolConfig defines HTTP-specific configuration

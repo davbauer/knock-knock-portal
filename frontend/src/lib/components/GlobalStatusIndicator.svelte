@@ -9,10 +9,29 @@
 	interface IPAllowStatus {
 		current_ip: string;
 		allowed: boolean;
-		reason: string; // "session" | "ip_allowlist" | "not_allowed"
+		access_method: string; // "permanent_ip_range" | "dynamic_dns_hostname" | "authenticated_session" | "not_allowed"
+		access_description: string;
 		username?: string; // Only present if authenticated via session
 		authenticated_ips?: string[]; // Only present if session exists
 		session_expires_in?: number; // Only present if session exists
+		services?: ServiceAccessInfo[]; // Service-level access details
+		total_services?: number;
+		session_active?: boolean;
+		session_username?: string;
+	}
+
+	interface ServiceAccessInfo {
+		service_id: string;
+		service_name: string;
+		description: string;
+		access_granted: boolean;
+		access_reasons: AccessReason[];
+		access_denied_reason?: string;
+	}
+
+	interface AccessReason {
+		method: string; // "permanent_ip_range" | "dynamic_dns_hostname" | "authenticated_session"
+		description: string;
 	}
 
 	let status = $state<IPAllowStatus | null>(null);
@@ -26,7 +45,7 @@
 	async function fetchStatus() {
 		// Only run in browser
 		if (!browser) return;
-		
+
 		// Only fetch if tab is visible
 		if (document.visibilityState !== 'visible') {
 			return;
@@ -46,14 +65,19 @@
 				if (response.ok) {
 					const data = await response.json();
 					const sessionData = data.data.session;
-					
+
 					const newStatus: IPAllowStatus = {
 						current_ip: sessionData.current_ip,
 						allowed: sessionData.current_ip_allowed,
-						reason: 'session',
+						access_method: 'authenticated_session',
+						access_description: 'Access granted via authenticated session',
 						username: sessionData.username,
 						authenticated_ips: sessionData.authenticated_ips,
-						session_expires_in: sessionData.expires_in_seconds
+						session_expires_in: sessionData.expires_in_seconds,
+						services: sessionData.services || [],
+						total_services: sessionData.total_services || 0,
+						session_active: true,
+						session_username: sessionData.username
 					};
 
 					// Detect IP change
@@ -74,11 +98,12 @@
 			if (connectionResponse.ok) {
 				const connectionData = await connectionResponse.json();
 				const info = connectionData.data;
-				
+
 				status = {
 					current_ip: info.client_ip || 'Unknown',
 					allowed: info.allowed || false,
-					reason: info.reason || 'not_allowed'
+					access_method: info.access_method || 'not_allowed',
+					access_description: info.access_description || ''
 				};
 				error = null;
 			}
@@ -120,7 +145,7 @@
 	onMount(() => {
 		// Only run in browser
 		if (!browser) return;
-		
+
 		// Initial fetch
 		fetchStatus();
 
@@ -166,7 +191,9 @@
 	function getStatusText() {
 		if (!status) return 'Checking...';
 		if (status.allowed) {
-			if (status.reason === 'session') return status.username || 'Authenticated';
+			if (status.access_method === 'authenticated_session' && status.username) {
+				return status.username;
+			}
 			return 'Access Allowed';
 		}
 		return 'No Access';
@@ -175,204 +202,293 @@
 
 <!-- IP Change Dialog -->
 {#if status?.username}
-<Dialog.Root open={showIPChangeDialog}>
-	<Dialog.Backdrop class="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" />
-	<Dialog.Positioner class="fixed inset-0 z-50 flex items-center justify-center p-4">
-		<Dialog.Content
-			class="bg-base-100 w-full max-w-md rounded-lg border border-base-300 p-6 shadow-xl"
-		>
-			<div class="mb-4 flex items-start gap-3">
-				<div class="bg-warning/10 rounded-lg p-2">
-					<Network class="text-warning h-6 w-6" />
-				</div>
-				<div class="flex-1">
-					<Dialog.Title class="text-lg font-semibold text-base-content">
-						Network Change Detected
-					</Dialog.Title>
-					<Dialog.Description class="mt-1 text-sm text-base-content/70">
-						Your IP address has changed. Would you like to continue on this connection?
-					</Dialog.Description>
-				</div>
-			</div>
-
-			{#if status}
-				<div class="mb-4 rounded-lg bg-base-200 p-3">
-					<div class="mb-2 flex items-center justify-between">
-						<span class="text-xs font-medium text-base-content/70">Previous IP:</span>
-						<span class="font-mono text-sm text-base-content">{previousIP || 'Unknown'}</span>
-					</div>
-					<div class="flex items-center justify-between">
-						<span class="text-xs font-medium text-base-content/70">Current IP:</span>
-						<span class="font-mono text-sm font-semibold text-warning">
-							{status.current_ip}
-						</span>
-					</div>
-				</div>
-			{/if}
-
-			<div class="flex gap-2">
-				<button
-					onclick={() => (showIPChangeDialog = false)}
-					class="flex-1 rounded-lg border border-base-300 px-4 py-2 text-sm font-medium text-base-content transition-colors hover:bg-base-200"
-				>
-					Cancel
-				</button>
-				<button
-					onclick={addCurrentIP}
-					disabled={isAddingIP}
-					class="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-				>
-					{isAddingIP ? 'Adding...' : 'Continue'}
-				</button>
-			</div>
-
-			<Dialog.CloseTrigger
-				class="text-base-content/50 hover:text-base-content absolute right-4 top-4 transition-colors"
+	<Dialog.Root open={showIPChangeDialog}>
+		<Dialog.Backdrop class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
+		<Dialog.Positioner class="fixed inset-0 z-50 flex items-center justify-center p-4">
+			<Dialog.Content
+				class="bg-base-100 border-base-300 w-full max-w-md rounded-lg border p-6 shadow-xl"
 			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					width="20"
-					height="20"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
+				<div class="mb-4 flex items-start gap-3">
+					<div class="bg-warning/10 rounded-lg p-2">
+						<Network class="text-warning h-6 w-6" />
+					</div>
+					<div class="flex-1">
+						<Dialog.Title class="text-base-content text-lg font-semibold">
+							Network Change Detected
+						</Dialog.Title>
+						<Dialog.Description class="text-base-content/70 mt-1 text-sm">
+							Your IP address has changed. Would you like to continue on this connection?
+						</Dialog.Description>
+					</div>
+				</div>
+
+				{#if status}
+					<div class="bg-base-200 mb-4 rounded-lg p-3">
+						<div class="mb-2 flex items-center justify-between">
+							<span class="text-base-content/70 text-xs font-medium">Previous IP:</span>
+							<span class="text-base-content font-mono text-sm">{previousIP || 'Unknown'}</span>
+						</div>
+						<div class="flex items-center justify-between">
+							<span class="text-base-content/70 text-xs font-medium">Current IP:</span>
+							<span class="text-warning font-mono text-sm font-semibold">
+								{status.current_ip}
+							</span>
+						</div>
+					</div>
+				{/if}
+
+				<div class="flex gap-2">
+					<button
+						onclick={() => (showIPChangeDialog = false)}
+						class="border-base-300 text-base-content hover:bg-base-200 flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+					>
+						Cancel
+					</button>
+					<button
+						onclick={addCurrentIP}
+						disabled={isAddingIP}
+						class="bg-primary hover:bg-primary/90 flex-1 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
+					>
+						{isAddingIP ? 'Adding...' : 'Continue'}
+					</button>
+				</div>
+
+				<Dialog.CloseTrigger
+					class="text-base-content/50 hover:text-base-content absolute right-4 top-4 transition-colors"
 				>
-					<line x1="18" y1="6" x2="6" y2="18"></line>
-					<line x1="6" y1="6" x2="18" y2="18"></line>
-				</svg>
-			</Dialog.CloseTrigger>
-		</Dialog.Content>
-	</Dialog.Positioner>
-</Dialog.Root>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<line x1="18" y1="6" x2="6" y2="18"></line>
+						<line x1="6" y1="6" x2="18" y2="18"></line>
+					</svg>
+				</Dialog.CloseTrigger>
+			</Dialog.Content>
+		</Dialog.Positioner>
+	</Dialog.Root>
 {/if}
 
 <!-- Fixed Status Indicator in Top-Right Corner -->
 <div class="fixed right-4 top-4 z-30">
 	<Popover.Root>
 		<Popover.Trigger
-			class="flex items-center gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2 shadow-lg backdrop-blur-sm transition-colors hover:bg-base-100/90"
+			class="border-base-300 bg-base-100 hover:bg-base-100/90 flex items-center gap-2 rounded-lg border px-3 py-2 shadow-lg backdrop-blur-sm transition-colors"
 		>
 			{#if isLoading}
-				<div class="h-5 w-5 animate-spin rounded-full border-2 border-base-content/20 border-t-primary"></div>
+				<div
+					class="border-base-content/20 border-t-primary h-5 w-5 animate-spin rounded-full border-2"
+				></div>
 			{:else}
 				{@const Icon = getStatusIcon()}
 				<Icon class={`h-5 w-5 ${getStatusColor()}`} />
 			{/if}
-			<span class="text-sm font-medium text-base-content">{getStatusText()}</span>
+			<span class="text-base-content text-sm font-medium">{getStatusText()}</span>
 		</Popover.Trigger>
 
 		<Popover.Positioner>
 			<Popover.Content
-				class="bg-base-100 z-50 w-80 rounded-lg border border-base-300 p-4 shadow-xl"
+				class="bg-base-100 border-base-300 z-50 w-80 rounded-lg border p-4 shadow-xl"
 			>
 				<Popover.Arrow>
 					<Popover.ArrowTip class="border-base-300 border-l border-t" />
 				</Popover.Arrow>
 
-			{#if error}
-				<div class="mb-4 rounded-lg bg-error/10 p-3 text-sm text-error">
-					{error}
-				</div>
-			{/if}				{#if status}
-					<div class="space-y-4">
-					<!-- User Info (if authenticated) -->
-					{#if status.username}
-						<div>
-							<div class="mb-1 text-xs font-medium uppercase tracking-wide text-base-content/70">
-								Logged in as
-							</div>
-							<div class="flex items-center gap-2">
-								<Shield class="h-4 w-4 text-success" />
-								<span class="font-semibold text-base-content">{status.username}</span>
-							</div>
-						</div>
-					{:else}
-						<div>
-							<div class="mb-1 text-xs font-medium uppercase tracking-wide text-base-content/70">
-								Status
-							</div>
-							<div class="flex items-center gap-2">
-								{#if status.allowed}
-									<CheckCircle2 class="h-4 w-4 text-success" />
-									<span class="font-medium text-success">IP Allowed</span>
-								{:else}
-									<Lock class="h-4 w-4 text-base-content/50" />
-									<span class="font-medium text-base-content/70">Not Authenticated</span>
-								{/if}
-							</div>
-						</div>
-					{/if}
-
-					<!-- Current IP Status -->
-					<div>
-						<div class="mb-2 text-xs font-medium uppercase tracking-wide text-base-content/70">
-							Current Connection
-						</div>
-							<div class="flex items-center gap-2">
-								{#if status.allowed}
-									<CheckCircle2 class="h-4 w-4 text-success" />
-									<span class="text-sm font-medium text-success">Connected</span>
-								{:else}
-									<AlertCircle class="h-4 w-4 text-base-content/50" />
-									<span class="text-sm font-medium text-base-content/70">Not Allowed</span>
-								{/if}
-							</div>
-						<div class="mt-2 rounded bg-base-200 px-2 py-1 font-mono text-sm text-base-content">
-							{status.current_ip}
-						</div>
+				{#if error}
+					<div class="bg-error/10 text-error mb-4 rounded-lg p-3 text-sm">
+						{error}
 					</div>
-
-					<!-- Authenticated IPs (if session exists) -->
-					{#if status.authenticated_ips && status.authenticated_ips.length > 0}
-						<div>
-							<div class="mb-2 text-xs font-medium uppercase tracking-wide text-base-content/70">
-								Authenticated IPs ({status.authenticated_ips.length})
+				{/if}
+				{#if status}
+					<div class="space-y-4">
+						<!-- User Info (if authenticated) -->
+						{#if status.username}
+							<div>
+								<div class="text-base-content/70 mb-1 text-xs font-medium uppercase tracking-wide">
+									Logged in as
+								</div>
+								<div class="flex items-center gap-2">
+									<Shield class="text-success h-4 w-4" />
+									<span class="text-base-content font-semibold">{status.username}</span>
+								</div>
 							</div>
-							<div class="space-y-1">
-								{#each status.authenticated_ips as ip}
-									<div class="flex items-center gap-2">
-										{#if ip === status.current_ip}
-											<div class="h-2 w-2 rounded-full bg-success"></div>
-										{:else}
-											<div class="h-2 w-2 rounded-full bg-base-content/20"></div>
-										{/if}
-										<span class="rounded bg-base-200 px-2 py-0.5 font-mono text-xs text-base-content">{ip}</span>
-									</div>
-								{/each}
-							</div>
-						</div>
-					{/if}
-
-					<!-- Session Expires (if session exists) -->
-					{#if status.session_expires_in !== undefined}
-						<div>
-							<div class="mb-1 text-xs font-medium uppercase tracking-wide text-base-content/70">
-								Session Expires
-							</div>
-							<div class="text-sm text-base-content">
-								{Math.floor(status.session_expires_in / 60)} minutes
+						{:else}
+							<div>
+								<div class="text-base-content/70 mb-1 text-xs font-medium uppercase tracking-wide">
+									Status
+								</div>
+								<div class="flex items-center gap-2">
+									{#if status.allowed}
+										<CheckCircle2 class="text-success h-4 w-4" />
+										<span class="text-success font-medium">IP Allowed</span>
+									{:else}
+										<Lock class="text-base-content/50 h-4 w-4" />
+										<span class="text-base-content/70 font-medium">Not Authenticated</span>
+									{/if}
 								</div>
 							</div>
 						{/if}
 
-						<div class="border-t border-base-300 pt-3">
-							<div class="text-xs text-base-content/70">
+						<!-- Current IP Status -->
+						<div>
+							<div class="text-base-content/70 mb-2 text-xs font-medium uppercase tracking-wide">
+								Current Connection
+							</div>
+							<div class="flex items-center gap-2">
 								{#if status.allowed}
-									{#if status.reason === 'session'}
-										Access granted via authenticated session
-									{:else if status.reason === 'ip_allowlist' || status.reason === 'permanent_ip' || status.reason === 'dynamic_dns'}
-										Access granted via IP allowlist
-									{:else}
-										Access granted
-									{/if}
+									<CheckCircle2 class="text-success h-4 w-4" />
+									<span class="text-success text-sm font-medium">Connected</span>
 								{:else}
-									Your IP is not in the allowlist. Login to gain access.
+									<AlertCircle class="text-base-content/50 h-4 w-4" />
+									<span class="text-base-content/70 text-sm font-medium">Not Allowed</span>
 								{/if}
 							</div>
+							<div class="bg-base-200 text-base-content mt-2 rounded px-2 py-1 font-mono text-sm">
+								{status.current_ip}
+							</div>
 						</div>
+
+						<!-- Authenticated IPs (if session exists) -->
+						{#if status.authenticated_ips && status.authenticated_ips.length > 0}
+							<div>
+								<div class="text-base-content/70 mb-2 text-xs font-medium uppercase tracking-wide">
+									Authenticated IPs ({status.authenticated_ips.length})
+								</div>
+								<div class="space-y-1">
+									{#each status.authenticated_ips as ip}
+										<div class="flex items-center gap-2">
+											{#if ip === status.current_ip}
+												<div class="bg-success h-2 w-2 rounded-full"></div>
+											{:else}
+												<div class="bg-base-content/20 h-2 w-2 rounded-full"></div>
+											{/if}
+											<span
+												class="bg-base-200 text-base-content rounded px-2 py-0.5 font-mono text-xs"
+												>{ip}</span
+											>
+										</div>
+									{/each}
+								</div>
+							</div>
+						{/if}
+
+						<!-- Session Expires (if session exists) -->
+						{#if status.session_expires_in !== undefined}
+							<div>
+								<div class="text-base-content/70 mb-1 text-xs font-medium uppercase tracking-wide">
+									Session Expires
+								</div>
+								<div class="text-base-content text-sm">
+									{Math.floor(status.session_expires_in / 60)} minutes
+								</div>
+							</div>
+						{/if}
+
+						<!-- Access Reason -->
+						<div class="border-base-300 border-t pt-3">
+							<div class="text-base-content/70 mb-1 text-xs font-medium uppercase tracking-wide">
+								Access Method
+							</div>
+							<div class="text-base-content/70 text-xs">
+								{status.access_description}
+							</div>
+							{#if status.access_method === 'permanent_ip_range'}
+								<div class="bg-primary/10 text-primary mt-2 rounded px-2 py-1 text-xs">
+									✓ Permanent IP Range
+								</div>
+							{:else if status.access_method === 'dynamic_dns_hostname'}
+								<div class="bg-primary/10 text-primary mt-2 rounded px-2 py-1 text-xs">
+									✓ Dynamic DNS Hostname
+								</div>
+							{:else if status.access_method === 'authenticated_session'}
+								<div class="bg-success/10 text-success mt-2 rounded px-2 py-1 text-xs">
+									✓ Authenticated Session
+								</div>
+							{/if}
+						</div>
+
+						<!-- Service Access Details -->
+						{#if status.services && status.services.length > 0}
+							<div class="border-base-300 border-t pt-3">
+								<div class="text-base-content/70 mb-2 text-xs font-medium uppercase tracking-wide">
+									Service Access ({status.total_services} services)
+								</div>
+								<div class="max-h-64 space-y-2 overflow-y-auto">
+									{#each status.services as service}
+										<div class="border-base-300 bg-base-100 rounded border p-2">
+											<div class="flex items-start justify-between">
+												<div class="flex-1">
+													<div class="text-base-content text-sm font-medium">
+														{service.service_name}
+													</div>
+													{#if service.description}
+														<div class="text-base-content/60 text-xs">
+															{service.description}
+														</div>
+													{/if}
+												</div>
+												<div class="ml-2">
+													{#if service.access_granted}
+														<span class="bg-success/20 text-success rounded px-2 py-0.5 text-xs">
+															Allowed
+														</span>
+													{:else}
+														<span
+															class="bg-base-300 text-base-content/50 rounded px-2 py-0.5 text-xs"
+														>
+															Denied
+														</span>
+													{/if}
+												</div>
+											</div>
+
+											<!-- Access Reasons -->
+											{#if service.access_granted && service.access_reasons.length > 0}
+												<div class="border-base-300/50 mt-2 space-y-1 border-t pt-2">
+													{#each service.access_reasons as reason}
+														<div class="flex items-start gap-1.5 text-xs">
+															<span class="text-success mt-0.5">✓</span>
+															<div class="flex-1">
+																<div class="text-base-content/70 font-medium">
+																	{#if reason.method === 'permanent_ip_range'}
+																		Permanent IP
+																	{:else if reason.method === 'dynamic_dns_hostname'}
+																		Dynamic DNS
+																	{:else if reason.method === 'authenticated_session'}
+																		Session
+																	{:else}
+																		{reason.method}
+																	{/if}
+																</div>
+																<div class="text-base-content/50">
+																	{reason.description}
+																</div>
+															</div>
+														</div>
+													{/each}
+												</div>
+											{/if}
+
+											<!-- Denied Reason -->
+											{#if !service.access_granted && service.access_denied_reason}
+												<div
+													class="border-base-300/50 text-base-content/50 mt-2 border-t pt-2 text-xs"
+												>
+													{service.access_denied_reason}
+												</div>
+											{/if}
+										</div>
+									{/each}
+								</div>
+							</div>
+						{/if}
 					</div>
 				{/if}
 
