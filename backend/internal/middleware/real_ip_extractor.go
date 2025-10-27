@@ -7,6 +7,7 @@ import (
 
 	"github.com/davbauer/knock-knock-portal/internal/config"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 // RealIPExtractor extracts the real client IP considering trusted proxies
@@ -54,7 +55,23 @@ func (e *RealIPExtractor) ExtractRealIP(c *gin.Context) netip.Addr {
 
 	// Check if connection is from a trusted proxy
 	if !e.isTrustedProxy(connIP) {
-		// Not from trusted proxy - ignore headers to prevent spoofing
+		// Check if request has proxy headers - only warn if they tried to use proxy headers
+		hasProxyHeaders := false
+		for _, header := range e.headerPriority {
+			if c.GetHeader(header) != "" {
+				hasProxyHeaders = true
+				break
+			}
+		}
+		
+		// Only log warning if proxy headers are present (potential spoofing attempt)
+		if e.enabled && hasProxyHeaders {
+			log.Warn().
+				Str("untrusted_proxy_ip", connIP.String()).
+				Str("suggestion", "Add this IP to trusted_proxy_ip_ranges in config.yml").
+				Str("config_example", "trusted_proxy_config:\n  enabled: true\n  trusted_proxy_ip_ranges:\n    - \""+connIP.String()+"\"").
+				Msg("Request from untrusted proxy with X-Forwarded-For headers - ignoring headers to prevent IP spoofing")
+		}
 		return connIP
 	}
 
