@@ -16,7 +16,11 @@
 		Download,
 		Upload,
 		Copy,
-		Network
+		Network,
+		CircleCheck,
+		CircleAlert,
+		TriangleAlert,
+		Info
 	} from 'lucide-svelte';
 	import { API_BASE_URL } from '$lib/config';
 	import { Tabs, Dialog, Field, Toast, Toaster } from '@ark-ui/svelte';
@@ -43,6 +47,9 @@
 	let showImportDialog = $state(false);
 	let importJsonText = $state('');
 	let importError = $state('');
+
+	let sessionToTerminate = $state<Session | null>(null);
+	let showTerminateDialog = $state(false);
 
 	// Get initial tabs from URL or defaults
 	let currentMainTab = $state($page.url.searchParams.get('tab') || 'connections');
@@ -142,7 +149,7 @@
 						return null;
 					})
 					.filter((s): s is Session => s !== null)
-					.concat(Array.from(newSessionMap.values()));
+					.concat(Array.from(newSessionMap.values()) as Session[]);
 			} else {
 				sessions = newSessions;
 			}
@@ -204,7 +211,7 @@
 						return null;
 					})
 					.filter((c): c is Connection => c !== null)
-					.concat(Array.from(newConnMap.values()));
+					.concat(Array.from(newConnMap.values()) as Connection[]);
 			} else {
 				connections = newConnections;
 			}
