@@ -170,9 +170,9 @@ The portal supports multiple authentication methods:
 
 ## ⚙️ Configuration
 
-Configuration is done through YAML files or the web-based admin panel. See [`config.example.yml`](backend/config.example.yml) for a complete configuration reference.
+All configuration is done through the web-based admin panel. You can configure services, users, IP allowlists, and more directly from the UI.
 
-**💡 Pro Tip:** Use the web admin panel to configure everything - no need to manually edit files!
+**💡 Pro Tip:** No YAML editing required - everything is managed through the intuitive web interface!
 
 ---
 
