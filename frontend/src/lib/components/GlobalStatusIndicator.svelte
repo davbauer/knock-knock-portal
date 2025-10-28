@@ -167,11 +167,18 @@
 		};
 		document.addEventListener('visibilitychange', handleVisibilityChange);
 
+		// Listen for login success events
+		const handleLoginSuccess = () => {
+			fetchStatus();
+		};
+		window.addEventListener('portal-login-success', handleLoginSuccess);
+
 		return () => {
 			if (intervalId) {
 				clearInterval(intervalId);
 			}
 			document.removeEventListener('visibilitychange', handleVisibilityChange);
+			window.removeEventListener('portal-login-success', handleLoginSuccess);
 		};
 	});
 
