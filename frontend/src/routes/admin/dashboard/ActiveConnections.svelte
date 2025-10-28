@@ -231,7 +231,7 @@
 									{#if onTerminate}
 										<button
 											onclick={() => onTerminate?.(conn)}
-											class="bg-error/10 text-error hover:bg-error hover:text-white inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
+											class="bg-error/10 text-error hover:bg-error inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors hover:text-white"
 											title="Terminate all connections from {conn.ip}"
 										>
 											<Trash2 class="h-3.5 w-3.5" />

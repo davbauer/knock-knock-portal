@@ -69,7 +69,7 @@
 			url.searchParams.set('config_tab', currentConfigTab);
 		}
 		goto(url.toString(), { replaceState: true, noScroll: true });
-		
+
 		// Fetch data when switching tabs and setup auto-refresh
 		setupAutoRefresh(tab);
 	}
@@ -135,15 +135,15 @@
 
 			const data = await response.json();
 			const newSessions = data.data.sessions || [];
-			
+
 			// Update existing sessions in place to avoid re-rendering
 			if (sessions.length > 0) {
 				// Create a map of new sessions by session_id
 				const newSessionMap = new Map(newSessions.map((s: Session) => [s.session_id, s]));
-				
+
 				// Update existing sessions
 				sessions = sessions
-					.map(sess => {
+					.map((sess) => {
 						const updated = newSessionMap.get(sess.session_id);
 						if (updated) {
 							newSessionMap.delete(sess.session_id);
@@ -156,7 +156,7 @@
 			} else {
 				sessions = newSessions;
 			}
-			
+
 			sessionsError = '';
 		} catch (err) {
 			sessionsError = err instanceof Error ? err.message : 'Failed to load active users';
@@ -197,15 +197,15 @@
 
 			const data = await response.json();
 			const newConnections = data.data.connections || [];
-			
+
 			// Update existing connections in place to avoid re-rendering
 			if (connections.length > 0) {
 				// Create a map of new connections by IP
 				const newConnMap = new Map(newConnections.map((c: Connection) => [c.ip, c]));
-				
+
 				// Update existing connections
 				connections = connections
-					.map(conn => {
+					.map((conn) => {
 						const updated = newConnMap.get(conn.ip);
 						if (updated) {
 							newConnMap.delete(conn.ip);
@@ -218,7 +218,7 @@
 			} else {
 				connections = newConnections;
 			}
-			
+
 			connectionsError = '';
 		} catch (err) {
 			connectionsError = err instanceof Error ? err.message : 'Failed to load connections';
@@ -405,12 +405,15 @@
 		}
 
 		try {
-			const response = await fetch(`${API_BASE_URL}/api/admin/connections/${encodeURIComponent(connection.ip)}`, {
-				method: 'DELETE',
-				headers: {
-					Authorization: `Bearer ${token}`
+			const response = await fetch(
+				`${API_BASE_URL}/api/admin/connections/${encodeURIComponent(connection.ip)}`,
+				{
+					method: 'DELETE',
+					headers: {
+						Authorization: `Bearer ${token}`
+					}
 				}
-			});
+			);
 
 			if (response.status === 401) {
 				localStorage.removeItem('admin_token');
@@ -486,7 +489,7 @@
 
 	onMount(() => {
 		fetchConfig();
-		
+
 		// Setup auto-refresh for the active tab
 		setupAutoRefresh(currentMainTab);
 	});
@@ -839,11 +842,13 @@
 						</div>
 					</div>
 
-					<div class="border-border rounded-lg border bg-base-200/50 p-4">
+					<div class="border-border bg-base-200/50 rounded-lg border p-4">
 						<p class="text-base-content text-sm">
 							Are you sure you want to terminate all connections from:
 						</p>
-						<code class="bg-base-100 text-base-content mt-2 block rounded px-2 py-1 font-mono text-sm">
+						<code
+							class="bg-base-100 text-base-content mt-2 block rounded px-2 py-1 font-mono text-sm"
+						>
 							{connectionToTerminate.ip}
 						</code>
 						{#if connectionToTerminate.authenticated}
@@ -856,7 +861,9 @@
 							</p>
 						{/if}
 						<p class="text-base-muted mt-2 text-xs">
-							Active sessions: <span class="font-semibold">{connectionToTerminate.total_sessions}</span>
+							Active sessions: <span class="font-semibold"
+								>{connectionToTerminate.total_sessions}</span
+							>
 						</p>
 					</div>
 

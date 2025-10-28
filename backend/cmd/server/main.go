@@ -81,7 +81,7 @@ func main() {
 
 	// Initialize IP blocklist manager (HIGHEST PRIORITY - blocks before any other checks)
 	blocklistManager := ipblocklist.NewManager(&cfg.NetworkAccessControl)
-	
+
 	// Initialize IP allowlist manager
 	allowlistManager := ipallowlist.NewManager(&cfg.NetworkAccessControl)
 	defer allowlistManager.Close()

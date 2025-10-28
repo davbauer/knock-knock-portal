@@ -343,19 +343,20 @@
 							<div class="text-base-content/70 mb-2 text-xs font-medium uppercase tracking-wide">
 								Current Connection
 							</div>
-							
-						<!-- Proxy Warning -->
-						{#if status.proxy_warning}
-							<div class="bg-warning/10 text-warning mb-3 rounded-lg p-3">
-								<div class="mb-1 flex items-center gap-2">
-									<AlertCircle class="h-4 w-4 shrink-0" />
-									<span class="text-sm font-semibold">Proxy Configuration</span>
+
+							<!-- Proxy Warning -->
+							{#if status.proxy_warning}
+								<div class="bg-warning/10 text-warning mb-3 rounded-lg p-3">
+									<div class="mb-1 flex items-center gap-2">
+										<AlertCircle class="h-4 w-4 shrink-0" />
+										<span class="text-sm font-semibold">Proxy Configuration</span>
+									</div>
+									<div class="text-xs leading-relaxed opacity-90">
+										{status.proxy_warning}
+									</div>
 								</div>
-								<div class="text-xs leading-relaxed opacity-90">
-									{status.proxy_warning}
-								</div>
-							</div>
-						{/if}							<div class="flex items-center gap-2">
+							{/if}
+							<div class="flex items-center gap-2">
 								{#if status.allowed}
 									<CheckCircle2 class="text-success h-4 w-4" />
 									<span class="text-success text-sm font-medium">Connected</span>

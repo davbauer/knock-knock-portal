@@ -66,19 +66,19 @@ func NewRouter(
 	// Real IP extractor with dynamic config reload
 	cfg := configLoader.GetConfig()
 	ipExtractor, _ := middleware.NewRealIPExtractor(&cfg.TrustedProxyConfig)
-	
+
 	// Register callback to update IP extractor and proxy manager when config reloads
 	configLoader.RegisterReloadCallback(func(newCfg *config.ApplicationConfig) {
 		ipExtractor.Reload(&newCfg.TrustedProxyConfig)
 		allowlistManager.Reload(&newCfg.NetworkAccessControl)
 		blocklistManager.Reload(&newCfg.NetworkAccessControl)
-		
+
 		// Reload proxy manager to apply service changes
 		if err := proxyManager.Reload(); err != nil {
 			// Log error but don't fail - proxy manager logs details
 		}
 	})
-	
+
 	engine.Use(ipExtractor.Middleware())
 
 	router := &Router{
@@ -149,25 +149,25 @@ func (r *Router) setupRoutes() {
 			adminLoginHandler := handlers.NewAdminLoginHandler(r.passwordVerifier, r.jwtManager, r.blocklistManager)
 			admin.POST("/login", adminLoginHandler.Handle)
 
-		// Protected admin endpoints
-		protected := admin.Group("")
-		protected.Use(middleware.AuthMiddleware(r.jwtManager, auth.TokenTypeAdmin))
-		{
-			// User/Session management (authenticated portal users only)
-			sessionsHandler := handlers.NewAdminSessionsHandler(r.sessionManager, r.allowlistManager, r.proxyManager)
-			protected.GET("/users", sessionsHandler.HandleList)
-			protected.DELETE("/users/:session_id", sessionsHandler.HandleDelete)
-			
-			// Connection monitoring (shows ALL active connections including anonymous)
-			connectionsHandler := handlers.NewAdminConnectionsHandler(r.proxyManager, r.sessionManager)
-			protected.GET("/connections", connectionsHandler.HandleList)
-			protected.DELETE("/connections/:ip", connectionsHandler.HandleTerminate)
-			
-			// Configuration management
-			configHandler := handlers.NewAdminConfigHandler(r.configLoader)
-			protected.GET("/config", configHandler.HandleGetConfig)
-			protected.PUT("/config", configHandler.HandleUpdateConfig)
-		}
+			// Protected admin endpoints
+			protected := admin.Group("")
+			protected.Use(middleware.AuthMiddleware(r.jwtManager, auth.TokenTypeAdmin))
+			{
+				// User/Session management (authenticated portal users only)
+				sessionsHandler := handlers.NewAdminSessionsHandler(r.sessionManager, r.allowlistManager, r.proxyManager)
+				protected.GET("/users", sessionsHandler.HandleList)
+				protected.DELETE("/users/:session_id", sessionsHandler.HandleDelete)
+
+				// Connection monitoring (shows ALL active connections including anonymous)
+				connectionsHandler := handlers.NewAdminConnectionsHandler(r.proxyManager, r.sessionManager)
+				protected.GET("/connections", connectionsHandler.HandleList)
+				protected.DELETE("/connections/:ip", connectionsHandler.HandleTerminate)
+
+				// Configuration management
+				configHandler := handlers.NewAdminConfigHandler(r.configLoader)
+				protected.GET("/config", configHandler.HandleGetConfig)
+				protected.PUT("/config", configHandler.HandleUpdateConfig)
+			}
 		}
 	}
 

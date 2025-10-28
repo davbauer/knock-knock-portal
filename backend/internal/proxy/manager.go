@@ -90,7 +90,7 @@ func (m *Manager) Start() error {
 		} else if service.TransportProtocol == "both" {
 			// Create both TCP and UDP proxies for the same service
 			sessionTimeout := time.Duration(cfg.ProxyServerConfig.UDPSessionTimeoutSeconds) * time.Second
-			
+
 			// Start TCP proxy
 			tcpProxy := NewTCPProxy(&cfg.ProtectedServices[i], m.allowlistManager, m.blocklistManager, maxConnections)
 			if err := tcpProxy.Start(); err != nil {
@@ -110,7 +110,7 @@ func (m *Manager) Start() error {
 					Str("protocol", "tcp").
 					Msg("TCP proxy started successfully")
 			}
-			
+
 			// Start UDP proxy
 			udpProxy := NewUDPProxy(&cfg.ProtectedServices[i], m.allowlistManager, m.blocklistManager, sessionTimeout, maxConnections)
 			if err := udpProxy.Start(); err != nil {
@@ -130,7 +130,7 @@ func (m *Manager) Start() error {
 					Str("protocol", "udp").
 					Msg("UDP proxy started successfully")
 			}
-			
+
 			continue // Skip the normal start logic below
 		} else {
 			log.Warn().
@@ -422,21 +422,21 @@ func (m *Manager) validateService(service *config.ProtectedServiceConfig) error 
 func (m *Manager) TerminateConnectionsByIP(clientIP string) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	if clientIP == "" {
 		return fmt.Errorf("client IP is required")
 	}
-	
+
 	totalTerminated := 0
 	for _, proxy := range m.proxies {
 		terminated := proxy.TerminateConnectionsByIP(clientIP)
 		totalTerminated += terminated
 	}
-	
+
 	log.Info().
 		Str("client_ip", clientIP).
 		Int("total_terminated", totalTerminated).
 		Msg("Terminated connections across all proxies")
-	
+
 	return nil
 }

@@ -26,6 +26,49 @@
 	}
 </script>
 
+<svelte:head>
+	<!-- Primary Meta Tags -->
+	<title>Knock-Knock Portal - Secure Authentication Gateway</title>
+	<meta name="title" content="Knock-Knock Portal - Secure Authentication Gateway" />
+	<meta
+		name="description"
+		content="Authentication-based port access gateway with dynamic IP allowlist, session management, and proxy services. Secure your network infrastructure with Knock-Knock Portal."
+	/>
+	<meta name="keywords" content="authentication gateway, port access control, network security, proxy server, IP allowlist, session management, TCP proxy, UDP proxy, HTTP proxy" />
+	<meta name="robots" content="noindex, nofollow" />
+	<meta name="author" content="David Bauer" />
+	
+	<!-- Open Graph / Facebook -->
+	<meta property="og:type" content="website" />
+	<meta property="og:title" content="Knock-Knock Portal - Secure Authentication Gateway" />
+	<meta
+		property="og:description"
+		content="Authentication-based port access gateway with dynamic IP allowlist, session management, and proxy services."
+	/>
+	<meta property="og:site_name" content="Knock-Knock Portal" />
+	
+	<!-- Twitter -->
+	<meta property="twitter:card" content="summary" />
+	<meta property="twitter:title" content="Knock-Knock Portal - Secure Authentication Gateway" />
+	<meta
+		property="twitter:description"
+		content="Authentication-based port access gateway with dynamic IP allowlist, session management, and proxy services."
+	/>
+	
+	<!-- Security Headers -->
+	<meta http-equiv="X-Content-Type-Options" content="nosniff" />
+	<meta http-equiv="X-Frame-Options" content="DENY" />
+	<meta http-equiv="X-XSS-Protection" content="1; mode=block" />
+	<meta name="referrer" content="strict-origin-when-cross-origin" />
+	
+	<!-- Viewport -->
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	
+	<!-- Theme Color -->
+	<meta name="theme-color" content="#3b82f6" />
+	<meta name="color-scheme" content="light dark" />
+</svelte:head>
+
 <div class="bg-base-200 flex min-h-screen flex-col">
 	<!-- Global Status Indicator (always visible) -->
 	<GlobalStatusIndicator />

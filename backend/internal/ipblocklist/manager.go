@@ -11,9 +11,9 @@ import (
 // Manager handles IP blocklist checking with HIGHEST priority
 // Blocked IPs cannot login, authenticate, or use any proxy services
 type Manager struct {
-	mu              sync.RWMutex
-	blockedIPs      map[string]bool // Specific IPs that are blocked
-	blockedCIDRs    []*net.IPNet    // CIDR ranges that are blocked
+	mu           sync.RWMutex
+	blockedIPs   map[string]bool // Specific IPs that are blocked
+	blockedCIDRs []*net.IPNet    // CIDR ranges that are blocked
 }
 
 // NewManager creates a new blocklist manager
@@ -22,7 +22,7 @@ func NewManager(cfg *config.NetworkAccessControlConfig) *Manager {
 		blockedIPs:   make(map[string]bool),
 		blockedCIDRs: make([]*net.IPNet, 0),
 	}
-	
+
 	m.Reload(cfg)
 	return m
 }
@@ -31,11 +31,11 @@ func NewManager(cfg *config.NetworkAccessControlConfig) *Manager {
 func (m *Manager) Reload(cfg *config.NetworkAccessControlConfig) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Clear existing blocklists
 	m.blockedIPs = make(map[string]bool)
 	m.blockedCIDRs = make([]*net.IPNet, 0)
-	
+
 	// Parse blocked IP addresses (supports both individual IPs and CIDR ranges)
 	for _, ipStr := range cfg.BlockedIPAddresses {
 		// Try parsing as CIDR first
@@ -48,7 +48,7 @@ func (m *Manager) Reload(cfg *config.NetworkAccessControlConfig) {
 				Msg("Added CIDR range to blocklist")
 			continue
 		}
-		
+
 		// Try parsing as individual IP
 		ip := net.ParseIP(ipStr)
 		if ip == nil {
@@ -57,13 +57,13 @@ func (m *Manager) Reload(cfg *config.NetworkAccessControlConfig) {
 				Msg("Invalid blocked IP address or CIDR range, skipping")
 			continue
 		}
-		
+
 		m.blockedIPs[ip.String()] = true
 		log.Info().
 			Str("ip", ip.String()).
 			Msg("Added IP to blocklist")
 	}
-	
+
 	log.Info().
 		Int("blocked_ips", len(m.blockedIPs)).
 		Int("blocked_cidrs", len(m.blockedCIDRs)).
@@ -76,11 +76,11 @@ func (m *Manager) Reload(cfg *config.NetworkAccessControlConfig) {
 func (m *Manager) IsIPBlocked(ip net.IP) (bool, string) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	if ip == nil {
 		return true, "invalid IP address"
 	}
-	
+
 	// Check specific blocked IPs first
 	if m.blockedIPs[ip.String()] {
 		log.Warn().
@@ -88,7 +88,7 @@ func (m *Manager) IsIPBlocked(ip net.IP) (bool, string) {
 			Msg("IP blocked: matches blocklist")
 		return true, "IP is on blocklist"
 	}
-	
+
 	// Check blocked CIDR ranges
 	for _, cidr := range m.blockedCIDRs {
 		if cidr.Contains(ip) {
@@ -99,7 +99,7 @@ func (m *Manager) IsIPBlocked(ip net.IP) (bool, string) {
 			return true, "IP is in blocked CIDR range: " + cidr.String()
 		}
 	}
-	
+
 	// Not blocked
 	return false, ""
 }
@@ -108,7 +108,7 @@ func (m *Manager) IsIPBlocked(ip net.IP) (bool, string) {
 func (m *Manager) GetStats() map[string]interface{} {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	return map[string]interface{}{
 		"blocked_ips_count":   len(m.blockedIPs),
 		"blocked_cidrs_count": len(m.blockedCIDRs),

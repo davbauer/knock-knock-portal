@@ -17,13 +17,13 @@ import (
 
 // tcpConnection tracks an active TCP connection
 type tcpConnection struct {
-	clientConn      net.Conn
-	clientIP        string
-	cancel          context.CancelFunc
+	clientConn        net.Conn
+	clientIP          string
+	cancel            context.CancelFunc
 	packetsFromClient int64 // Packets received from client
 	packetsToClient   int64 // Packets sent to client
-	bytesFromClient int64 // Bytes received from client
-	bytesToClient   int64 // Bytes sent to client
+	bytesFromClient   int64 // Bytes received from client
+	bytesToClient     int64 // Bytes sent to client
 }
 
 // TCPProxy handles TCP connection proxying with IP filtering
@@ -438,12 +438,12 @@ func (p *TCPProxy) GetStats() map[string]interface{} {
 func (p *TCPProxy) TerminateConnectionsByIP(clientIP string) int {
 	p.connectionsMu.Lock()
 	defer p.connectionsMu.Unlock()
-	
+
 	conns, exists := p.connections[clientIP]
 	if !exists || len(conns) == 0 {
 		return 0
 	}
-	
+
 	terminated := 0
 	for _, conn := range conns {
 		if conn.cancel != nil {
@@ -454,16 +454,16 @@ func (p *TCPProxy) TerminateConnectionsByIP(clientIP string) int {
 		}
 		terminated++
 	}
-	
+
 	// Remove from active connections map
 	delete(p.connections, clientIP)
-	
+
 	log.Info().
 		Str("service", p.service.ServiceName).
 		Str("client_ip", clientIP).
 		Int("terminated_count", terminated).
 		Msg("Terminated TCP connections for IP")
-	
+
 	return terminated
 }
 

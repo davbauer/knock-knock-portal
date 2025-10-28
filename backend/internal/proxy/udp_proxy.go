@@ -37,12 +37,12 @@ type udpSession struct {
 	backendConn      *net.UDPConn
 	backendAddr      *net.UDPAddr // Expected backend address for validation
 	lastActivity     time.Time
-	spoofAttempts    int32  // Counter for spoof detection
-	maxSpoofAttempts int32  // Maximum allowed spoof attempts before termination
-	packetsReceived  int64  // Total packets received from client
-	packetsSent      int64  // Total packets sent to client
-	bytesReceived    int64  // Total bytes received from client
-	bytesSent        int64  // Total bytes sent to client
+	spoofAttempts    int32 // Counter for spoof detection
+	maxSpoofAttempts int32 // Maximum allowed spoof attempts before termination
+	packetsReceived  int64 // Total packets received from client
+	packetsSent      int64 // Total packets sent to client
+	bytesReceived    int64 // Total bytes received from client
+	bytesSent        int64 // Total bytes sent to client
 	mu               sync.Mutex
 }
 
@@ -410,9 +410,9 @@ func (p *UDPProxy) cleanupExpiredSessions() {
 	p.sessionsMu.Unlock()
 
 	log.Debug().
-	Int("expired_count", len(expired)).
-	Str("service", p.service.ServiceName).
-	Msg("UDP session cleanup completed")
+		Int("expired_count", len(expired)).
+		Str("service", p.service.ServiceName).
+		Msg("UDP session cleanup completed")
 }
 
 // TerminateSessionsByIP closes all UDP sessions for a specific IP address
@@ -539,9 +539,9 @@ func (p *UDPProxy) GetStats() map[string]interface{} {
 func (p *UDPProxy) TerminateConnectionsByIP(clientIP string) int {
 	p.sessionsMu.Lock()
 	defer p.sessionsMu.Unlock()
-	
+
 	terminated := 0
-	
+
 	// Find and close all sessions for this IP
 	for sessionKey, session := range p.sessions {
 		if session.clientAddr.IP.String() == clientIP {
@@ -554,7 +554,7 @@ func (p *UDPProxy) TerminateConnectionsByIP(clientIP string) int {
 			terminated++
 		}
 	}
-	
+
 	if terminated > 0 {
 		log.Info().
 			Str("service", p.service.ServiceName).
@@ -562,6 +562,6 @@ func (p *UDPProxy) TerminateConnectionsByIP(clientIP string) int {
 			Int("terminated_count", terminated).
 			Msg("Terminated UDP sessions for IP")
 	}
-	
+
 	return terminated
 }

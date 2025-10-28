@@ -13,10 +13,10 @@ import (
 
 // RealIPExtractor extracts the real client IP considering trusted proxies
 type RealIPExtractor struct {
-	mu                   sync.RWMutex
-	enabled              bool
-	trustedProxyRanges   []netip.Prefix
-	headerPriority       []string
+	mu                 sync.RWMutex
+	enabled            bool
+	trustedProxyRanges []netip.Prefix
+	headerPriority     []string
 }
 
 // NewRealIPExtractor creates a new real IP extractor
@@ -73,7 +73,7 @@ func (e *RealIPExtractor) ExtractRealIP(c *gin.Context) netip.Addr {
 	if !e.isTrustedProxy(connIP) {
 		// Check if request has proxy headers - only warn if they tried to use proxy headers
 		hasProxyHeaders := e.hasProxyHeaders(c, headerPriority)
-		
+
 		// Only log warning if proxy headers are present (potential spoofing attempt)
 		if enabled && hasProxyHeaders {
 			log.Warn().

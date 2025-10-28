@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"net"
 	"time"
 
 	"github.com/davbauer/knock-knock-portal/internal/auth"
@@ -62,7 +63,7 @@ func (h *PortalLoginHandler) Handle(c *gin.Context) {
 	}
 
 	// HIGHEST PRIORITY: Check IP blocklist FIRST - blocked IPs cannot login
-	if blocked, blockReason := h.blocklistManager.IsIPBlocked(clientIP.AsSlice()); blocked {
+	if blocked, blockReason := h.blocklistManager.IsIPBlocked(net.ParseIP(clientIP.String())); blocked {
 		c.JSON(403, models.NewErrorResponse("Access denied", "IP_BLOCKED"))
 		log.Warn().
 			Str("client_ip", clientIP.String()).
