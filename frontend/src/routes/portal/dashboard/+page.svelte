@@ -93,14 +93,14 @@
 
 			const data = await response.json();
 			const newSessionInfo = data.data.session;
-			
+
 			// Check if current IP is different from authenticated IPs
 			if (newSessionInfo.current_ip && !newSessionInfo.current_ip_allowed) {
 				// User's IP has changed and is not authorized
 				newIPDetected = newSessionInfo.current_ip;
 				showIPChangeDialog = true;
 			}
-			
+
 			sessionInfo = newSessionInfo;
 			error = '';
 		} catch (err) {
@@ -113,7 +113,7 @@
 
 	async function handleAddNewIP() {
 		if (!newIPDetected) return;
-		
+
 		isAddingIP = true;
 		const token = localStorage.getItem('portal_token');
 
@@ -363,17 +363,19 @@
 							</div>
 							<div class="flex items-center gap-3">
 								{#if sessionInfo.auto_extend_enabled}
-									<div class="group relative bg-primary/10 flex items-center gap-2 rounded-lg px-3 py-2">
+									<div
+										class="bg-primary/10 group relative flex items-center gap-2 rounded-lg px-3 py-2"
+									>
 										<Zap class="text-primary h-5 w-5" />
 										<span class="text-primary text-sm font-semibold">Auto-Extend Enabled</span>
 										<!-- Tooltip -->
 										<div
-											class="border-border bg-base-100 invisible absolute bottom-full right-0 mb-2 w-72 rounded-lg border p-3 text-xs shadow-lg opacity-0 transition-all group-hover:visible group-hover:opacity-100"
+											class="border-border bg-base-100 invisible absolute bottom-full right-0 mb-2 w-72 rounded-lg border p-3 text-xs opacity-0 shadow-lg transition-all group-hover:visible group-hover:opacity-100"
 										>
 											<p class="text-base-content leading-relaxed">
-												When enabled, your session will automatically extend whenever you connect
-												to any accessible service. This keeps you logged in as long as you're
-												actively using the services.
+												When enabled, your session will automatically extend whenever you connect to
+												any accessible service. This keeps you logged in as long as you're actively
+												using the services.
 											</p>
 										</div>
 									</div>
@@ -550,7 +552,7 @@
 										</div>
 										<div class="flex-1">
 											<p class="text-base-content font-medium">{service.service_name}</p>
-											<p class="text-base-muted text-xs mt-0.5">
+											<p class="text-base-muted mt-0.5 text-xs">
 												{#if service.proxy_listen_port_start === service.proxy_listen_port_end}
 													Port {service.proxy_listen_port_start}
 												{:else}

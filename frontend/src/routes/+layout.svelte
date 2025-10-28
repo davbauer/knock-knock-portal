@@ -34,10 +34,13 @@
 		name="description"
 		content="Authentication-based port access gateway with dynamic IP allowlist, session management, and proxy services. Secure your network infrastructure with Knock-Knock Portal."
 	/>
-	<meta name="keywords" content="authentication gateway, port access control, network security, proxy server, IP allowlist, session management, TCP proxy, UDP proxy, HTTP proxy" />
+	<meta
+		name="keywords"
+		content="authentication gateway, port access control, network security, proxy server, IP allowlist, session management, TCP proxy, UDP proxy, HTTP proxy"
+	/>
 	<meta name="robots" content="noindex, nofollow" />
 	<meta name="author" content="David Bauer" />
-	
+
 	<!-- Open Graph / Facebook -->
 	<meta property="og:type" content="website" />
 	<meta property="og:title" content="Knock-Knock Portal - Secure Authentication Gateway" />
@@ -46,7 +49,7 @@
 		content="Authentication-based port access gateway with dynamic IP allowlist, session management, and proxy services."
 	/>
 	<meta property="og:site_name" content="Knock-Knock Portal" />
-	
+
 	<!-- Twitter -->
 	<meta property="twitter:card" content="summary" />
 	<meta property="twitter:title" content="Knock-Knock Portal - Secure Authentication Gateway" />
@@ -54,14 +57,14 @@
 		property="twitter:description"
 		content="Authentication-based port access gateway with dynamic IP allowlist, session management, and proxy services."
 	/>
-	
+
 	<!-- Viewport -->
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	
+
 	<!-- Theme Color -->
 	<meta name="theme-color" content="#3b82f6" />
 	<meta name="color-scheme" content="light dark" />
-	
+
 	<!-- Referrer Policy (can be set via meta tag) -->
 	<meta name="referrer" content="strict-origin-when-cross-origin" />
 </svelte:head>

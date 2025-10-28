@@ -52,15 +52,15 @@
 				return;
 			}
 
-		// Store the token and session info
-		localStorage.setItem('portal_token', data.data.jwt_access_token);
-		localStorage.setItem('portal_session', JSON.stringify(data.data.session_info));
+			// Store the token and session info
+			localStorage.setItem('portal_token', data.data.jwt_access_token);
+			localStorage.setItem('portal_session', JSON.stringify(data.data.session_info));
 
-		// Dispatch custom event to trigger connection info refresh
-		window.dispatchEvent(new CustomEvent('portal-login-success'));
+			// Dispatch custom event to trigger connection info refresh
+			window.dispatchEvent(new CustomEvent('portal-login-success'));
 
-		// Redirect to portal dashboard
-		goto('/portal/dashboard');
+			// Redirect to portal dashboard
+			goto('/portal/dashboard');
 		} catch (err) {
 			error = 'Network error. Please check your connection and try again.';
 			isLoading = false;
