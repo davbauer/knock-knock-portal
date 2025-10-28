@@ -53,7 +53,7 @@ func NewRouter(
 	engine.Use(gin.Recovery())
 	engine.Use(middleware.RequestLogger())
 	engine.Use(middleware.RequestSizeLimiter(1 * 1024 * 1024)) // 1MB limit for request bodies
-	
+
 	// Security headers middleware
 	engine.Use(func(c *gin.Context) {
 		// Security headers
@@ -62,26 +62,24 @@ func NewRouter(
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()")
-		
-		// Content Security Policy
-		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
-		
+
+		// Content Security Policy - Allow inline styles and scripts for SvelteKit
+		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+
 		// Cross-Origin Policies
 		c.Header("Cross-Origin-Embedder-Policy", "require-corp")
 		c.Header("Cross-Origin-Opener-Policy", "same-origin")
 		c.Header("Cross-Origin-Resource-Policy", "same-origin")
-		
+
 		// Custom branding
 		c.Header("X-Powered-By", "Knock-Knock Portal API")
 		c.Header("X-Application", "Knock-Knock Authentication Gateway")
-		c.Header("X-Version", "1.0.0")
-		c.Header("Server", "Knock-Knock Portal/1.0.0")
-		
+
 		// Cache control for API endpoints
 		c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
 		c.Header("Pragma", "no-cache")
 		c.Header("Expires", "0")
-		
+
 		c.Next()
 	})
 
