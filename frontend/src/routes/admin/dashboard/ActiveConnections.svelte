@@ -139,7 +139,7 @@
 						</tr>
 					</thead>
 					<tbody class="divide-border divide-y">
-						{#each connections as conn}
+						{#each connections as conn (conn.ip)}
 							<tr class="hover:bg-base-200 transition-colors">
 								<td class="whitespace-nowrap px-6 py-4">
 									<code class="bg-base-200 text-base-content rounded px-2 py-1 font-mono text-sm">

@@ -132,7 +132,7 @@
 						</tr>
 					</thead>
 					<tbody class="divide-border divide-y">
-						{#each sessions as session}
+						{#each sessions as session (session.session_id)}
 							<tr class="hover:bg-base-200 transition-colors">
 								<td class="whitespace-nowrap px-6 py-4">
 									<div class="flex items-center gap-3">

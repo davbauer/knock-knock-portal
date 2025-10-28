@@ -101,7 +101,11 @@
 			return;
 		}
 
-		isLoadingSessions = true;
+		// Only show loading state on first fetch
+		if (sessions.length === 0) {
+			isLoadingSessions = true;
+		}
+
 		try {
 			const response = await fetch(`${API_BASE_URL}/api/admin/users`, {
 				headers: {
@@ -120,7 +124,29 @@
 			}
 
 			const data = await response.json();
-			sessions = data.data.sessions || [];
+			const newSessions = data.data.sessions || [];
+			
+			// Update existing sessions in place to avoid re-rendering
+			if (sessions.length > 0) {
+				// Create a map of new sessions by session_id
+				const newSessionMap = new Map(newSessions.map((s: Session) => [s.session_id, s]));
+				
+				// Update existing sessions
+				sessions = sessions
+					.map(sess => {
+						const updated = newSessionMap.get(sess.session_id);
+						if (updated) {
+							newSessionMap.delete(sess.session_id);
+							return updated;
+						}
+						return null;
+					})
+					.filter((s): s is Session => s !== null)
+					.concat(Array.from(newSessionMap.values()));
+			} else {
+				sessions = newSessions;
+			}
+			
 			sessionsError = '';
 		} catch (err) {
 			sessionsError = err instanceof Error ? err.message : 'Failed to load active users';
@@ -137,7 +163,11 @@
 			return;
 		}
 
-		isLoadingConnections = true;
+		// Only show loading state on first fetch
+		if (connections.length === 0) {
+			isLoadingConnections = true;
+		}
+
 		try {
 			const response = await fetch(`${API_BASE_URL}/api/admin/connections`, {
 				headers: {
@@ -156,7 +186,29 @@
 			}
 
 			const data = await response.json();
-			connections = data.data.connections || [];
+			const newConnections = data.data.connections || [];
+			
+			// Update existing connections in place to avoid re-rendering
+			if (connections.length > 0) {
+				// Create a map of new connections by IP
+				const newConnMap = new Map(newConnections.map((c: Connection) => [c.ip, c]));
+				
+				// Update existing connections
+				connections = connections
+					.map(conn => {
+						const updated = newConnMap.get(conn.ip);
+						if (updated) {
+							newConnMap.delete(conn.ip);
+							return updated;
+						}
+						return null;
+					})
+					.filter((c): c is Connection => c !== null)
+					.concat(Array.from(newConnMap.values()));
+			} else {
+				connections = newConnections;
+			}
+			
 			connectionsError = '';
 		} catch (err) {
 			connectionsError = err instanceof Error ? err.message : 'Failed to load connections';
