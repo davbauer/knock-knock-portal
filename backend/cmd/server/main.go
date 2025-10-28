@@ -13,6 +13,7 @@ import (
 	"github.com/davbauer/knock-knock-portal/internal/auth"
 	"github.com/davbauer/knock-knock-portal/internal/config"
 	"github.com/davbauer/knock-knock-portal/internal/ipallowlist"
+	"github.com/davbauer/knock-knock-portal/internal/ipblocklist"
 	"github.com/davbauer/knock-knock-portal/internal/proxy"
 	"github.com/davbauer/knock-knock-portal/internal/session"
 	"github.com/joho/godotenv"
@@ -78,12 +79,15 @@ func main() {
 	)
 	defer sessionManager.Close()
 
+	// Initialize IP blocklist manager (HIGHEST PRIORITY - blocks before any other checks)
+	blocklistManager := ipblocklist.NewManager(&cfg.NetworkAccessControl)
+	
 	// Initialize IP allowlist manager
 	allowlistManager := ipallowlist.NewManager(&cfg.NetworkAccessControl)
 	defer allowlistManager.Close()
 
 	// Initialize proxy manager
-	proxyManager := proxy.NewManager(configLoader, allowlistManager)
+	proxyManager := proxy.NewManager(configLoader, allowlistManager, blocklistManager)
 
 	// Start proxy services
 	if err := proxyManager.Start(); err != nil {
@@ -98,6 +102,7 @@ func main() {
 		passwordVerifier,
 		sessionManager,
 		allowlistManager,
+		blocklistManager,
 		proxyManager,
 	)
 

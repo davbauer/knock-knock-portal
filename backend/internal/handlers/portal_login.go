@@ -6,6 +6,7 @@ import (
 	"github.com/davbauer/knock-knock-portal/internal/auth"
 	"github.com/davbauer/knock-knock-portal/internal/config"
 	"github.com/davbauer/knock-knock-portal/internal/ipallowlist"
+	"github.com/davbauer/knock-knock-portal/internal/ipblocklist"
 	"github.com/davbauer/knock-knock-portal/internal/middleware"
 	"github.com/davbauer/knock-knock-portal/internal/models"
 	"github.com/davbauer/knock-knock-portal/internal/session"
@@ -27,6 +28,7 @@ type PortalLoginHandler struct {
 	jwtManager       *auth.JWTManager
 	sessionManager   *session.Manager
 	allowlistManager *ipallowlist.Manager
+	blocklistManager *ipblocklist.Manager
 	rateLimiter      *auth.RateLimiter
 }
 
@@ -37,6 +39,7 @@ func NewPortalLoginHandler(
 	jwtManager *auth.JWTManager,
 	sessionManager *session.Manager,
 	allowlistManager *ipallowlist.Manager,
+	blocklistManager *ipblocklist.Manager,
 ) *PortalLoginHandler {
 	return &PortalLoginHandler{
 		configLoader:     configLoader,
@@ -44,6 +47,7 @@ func NewPortalLoginHandler(
 		jwtManager:       jwtManager,
 		sessionManager:   sessionManager,
 		allowlistManager: allowlistManager,
+		blocklistManager: blocklistManager,
 		rateLimiter:      auth.NewRateLimiter(10, 5, 5000), // 10/min, burst 5, max 5000 IPs
 	}
 }
@@ -54,6 +58,16 @@ func (h *PortalLoginHandler) Handle(c *gin.Context) {
 	clientIP, ok := middleware.GetClientIP(c)
 	if !ok || !clientIP.IsValid() {
 		c.JSON(400, models.NewErrorResponse("Could not determine client IP", "INVALID_IP"))
+		return
+	}
+
+	// HIGHEST PRIORITY: Check IP blocklist FIRST - blocked IPs cannot login
+	if blocked, blockReason := h.blocklistManager.IsIPBlocked(clientIP.AsSlice()); blocked {
+		c.JSON(403, models.NewErrorResponse("Access denied", "IP_BLOCKED"))
+		log.Warn().
+			Str("client_ip", clientIP.String()).
+			Str("reason", blockReason).
+			Msg("Login attempt from blocked IP denied")
 		return
 	}
 

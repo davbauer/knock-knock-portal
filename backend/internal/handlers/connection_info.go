@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"net"
+
 	"github.com/davbauer/knock-knock-portal/internal/config"
 	"github.com/davbauer/knock-knock-portal/internal/ipallowlist"
+	"github.com/davbauer/knock-knock-portal/internal/ipblocklist"
 	"github.com/davbauer/knock-knock-portal/internal/middleware"
 	"github.com/davbauer/knock-knock-portal/internal/models"
 	"github.com/davbauer/knock-knock-portal/internal/session"
@@ -12,15 +15,17 @@ import (
 // ConnectionInfoHandler handles connection information requests
 type ConnectionInfoHandler struct {
 	ipAllowListManager *ipallowlist.Manager
+	blocklistManager   *ipblocklist.Manager
 	sessionManager     *session.Manager
 	configLoader       *config.Loader
 	ipExtractor        *middleware.RealIPExtractor
 }
 
 // NewConnectionInfoHandler creates a new connection info handler
-func NewConnectionInfoHandler(ipAllowListManager *ipallowlist.Manager, sessionManager *session.Manager, configLoader *config.Loader, ipExtractor *middleware.RealIPExtractor) *ConnectionInfoHandler {
+func NewConnectionInfoHandler(ipAllowListManager *ipallowlist.Manager, blocklistManager *ipblocklist.Manager, sessionManager *session.Manager, configLoader *config.Loader, ipExtractor *middleware.RealIPExtractor) *ConnectionInfoHandler {
 	return &ConnectionInfoHandler{
 		ipAllowListManager: ipAllowListManager,
+		blocklistManager:   blocklistManager,
 		sessionManager:     sessionManager,
 		configLoader:       configLoader,
 		ipExtractor:        ipExtractor,
@@ -39,6 +44,22 @@ func (h *ConnectionInfoHandler) HandleCheck(c *gin.Context) {
 	}
 
 	clientIPStr := clientIP.String()
+
+	// HIGHEST PRIORITY: Check if IP is blocked
+	if blocked, blockReason := h.blocklistManager.IsIPBlocked(net.ParseIP(clientIPStr)); blocked {
+		// IP is blocked - return immediate denial
+		c.JSON(403, models.NewAPIResponse("Connection info retrieved", map[string]interface{}{
+			"client_ip":          clientIPStr,
+			"allowed":            false,
+			"blocked":            true,
+			"access_method":      "blocked",
+			"access_description": "Your IP is blocked: " + blockReason,
+			"services":           []interface{}{},
+			"total_services":     0,
+			"session_active":     false,
+		}))
+		return
+	}
 
 	// Check if there's an untrusted proxy warning using middleware's detection
 	proxyWarning := h.ipExtractor.GetProxyWarning(c)

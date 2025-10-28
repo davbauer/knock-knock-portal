@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"net"
 	"time"
 
 	"github.com/davbauer/knock-knock-portal/internal/auth"
+	"github.com/davbauer/knock-knock-portal/internal/ipblocklist"
 	"github.com/davbauer/knock-knock-portal/internal/middleware"
 	"github.com/davbauer/knock-knock-portal/internal/models"
 	"github.com/gin-gonic/gin"
@@ -19,6 +21,7 @@ type AdminLoginRequest struct {
 type AdminLoginHandler struct {
 	passwordVerifier *auth.PasswordVerifier
 	jwtManager       *auth.JWTManager
+	blocklistManager *ipblocklist.Manager
 	rateLimiter      *auth.RateLimiter
 }
 
@@ -26,10 +29,12 @@ type AdminLoginHandler struct {
 func NewAdminLoginHandler(
 	passwordVerifier *auth.PasswordVerifier,
 	jwtManager *auth.JWTManager,
+	blocklistManager *ipblocklist.Manager,
 ) *AdminLoginHandler {
 	return &AdminLoginHandler{
 		passwordVerifier: passwordVerifier,
 		jwtManager:       jwtManager,
+		blocklistManager: blocklistManager,
 		rateLimiter:      auth.NewRateLimiter(5, 3, 1000), // 5/min, burst 3, max 1000 IPs
 	}
 }
@@ -40,6 +45,16 @@ func (h *AdminLoginHandler) Handle(c *gin.Context) {
 	clientIP, ok := middleware.GetClientIP(c)
 	if !ok || !clientIP.IsValid() {
 		c.JSON(400, models.NewErrorResponse("Could not determine client IP", "INVALID_IP"))
+		return
+	}
+
+	// HIGHEST PRIORITY: Check if IP is blocked
+	if blocked, blockReason := h.blocklistManager.IsIPBlocked(net.ParseIP(clientIP.String())); blocked {
+		c.JSON(403, models.NewErrorResponse("Access denied: "+blockReason, "IP_BLOCKED"))
+		log.Warn().
+			Str("client_ip", clientIP.String()).
+			Str("reason", blockReason).
+			Msg("Blocked IP attempted admin login")
 		return
 	}
 

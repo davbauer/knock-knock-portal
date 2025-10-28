@@ -21,6 +21,7 @@ type SessionConfiguration struct {
 
 // NetworkAccessControlConfig defines IP allowlist settings
 type NetworkAccessControlConfig struct {
+	BlockedIPAddresses         []string `yaml:"blocked_ip_addresses" json:"blocked_ip_addresses"`                       // Highest priority - blocks IPs and CIDR ranges
 	AllowedDynamicDNSHostnames []string `yaml:"allowed_dynamic_dns_hostnames" json:"allowed_dynamic_dns_hostnames"`
 	PermanentlyAllowedIPRanges []string `yaml:"permanently_allowed_ip_ranges" json:"permanently_allowed_ip_ranges"`
 	DNSRefreshIntervalSeconds  int      `yaml:"dns_refresh_interval_seconds" json:"dns_refresh_interval_seconds"`

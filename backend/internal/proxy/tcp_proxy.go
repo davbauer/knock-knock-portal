@@ -11,6 +11,7 @@ import (
 
 	"github.com/davbauer/knock-knock-portal/internal/config"
 	"github.com/davbauer/knock-knock-portal/internal/ipallowlist"
+	"github.com/davbauer/knock-knock-portal/internal/ipblocklist"
 	"github.com/rs/zerolog/log"
 )
 
@@ -29,6 +30,7 @@ type tcpConnection struct {
 type TCPProxy struct {
 	service          *config.ProtectedServiceConfig
 	allowlistManager *ipallowlist.Manager
+	blocklistManager *ipblocklist.Manager
 	listener         net.Listener
 	ctx              context.Context
 	cancel           context.CancelFunc
@@ -44,11 +46,12 @@ type TCPProxy struct {
 }
 
 // NewTCPProxy creates a new TCP proxy
-func NewTCPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipallowlist.Manager, maxConnections int) *TCPProxy {
+func NewTCPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipallowlist.Manager, blocklistManager *ipblocklist.Manager, maxConnections int) *TCPProxy {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &TCPProxy{
 		service:          service,
 		allowlistManager: allowlistManager,
+		blocklistManager: blocklistManager,
 		ctx:              ctx,
 		cancel:           cancel,
 		maxConns:         int32(maxConnections),
@@ -133,6 +136,16 @@ func (p *TCPProxy) handleConnection(ctx context.Context, clientConn net.Conn) {
 	}
 
 	clientIPStr := clientIP.String()
+
+	// HIGHEST PRIORITY: Check IP blocklist first
+	if blocked, blockReason := p.blocklistManager.IsIPBlocked(net.ParseIP(clientIPStr)); blocked {
+		log.Warn().
+			Str("client_ip", clientIPStr).
+			Str("service", p.service.ServiceName).
+			Str("reason", blockReason).
+			Msg("Connection denied: IP is blocked")
+		return
+	}
 
 	// Check IP allowlist
 	allowed, reason := p.allowlistManager.IsIPAllowed(clientIP)
@@ -419,6 +432,39 @@ func (p *TCPProxy) GetStats() map[string]interface{} {
 	}
 
 	return stats
+}
+
+// TerminateConnectionsByIP forcefully closes all active connections from a specific IP
+func (p *TCPProxy) TerminateConnectionsByIP(clientIP string) int {
+	p.connectionsMu.Lock()
+	defer p.connectionsMu.Unlock()
+	
+	conns, exists := p.connections[clientIP]
+	if !exists || len(conns) == 0 {
+		return 0
+	}
+	
+	terminated := 0
+	for _, conn := range conns {
+		if conn.cancel != nil {
+			conn.cancel() // Cancel context to stop proxy goroutines
+		}
+		if conn.clientConn != nil {
+			conn.clientConn.Close() // Force close the connection
+		}
+		terminated++
+	}
+	
+	// Remove from active connections map
+	delete(p.connections, clientIP)
+	
+	log.Info().
+		Str("service", p.service.ServiceName).
+		Str("client_ip", clientIP).
+		Int("terminated_count", terminated).
+		Msg("Terminated TCP connections for IP")
+	
+	return terminated
 }
 
 // copyWithStats performs buffered copy while tracking bytes and packet counts

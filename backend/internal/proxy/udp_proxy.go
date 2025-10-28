@@ -10,6 +10,7 @@ import (
 
 	"github.com/davbauer/knock-knock-portal/internal/config"
 	"github.com/davbauer/knock-knock-portal/internal/ipallowlist"
+	"github.com/davbauer/knock-knock-portal/internal/ipblocklist"
 	"github.com/rs/zerolog/log"
 )
 
@@ -17,6 +18,7 @@ import (
 type UDPProxy struct {
 	service          *config.ProtectedServiceConfig
 	allowlistManager *ipallowlist.Manager
+	blocklistManager *ipblocklist.Manager
 	conn             *net.UDPConn
 	ctx              context.Context
 	cancel           context.CancelFunc
@@ -45,11 +47,12 @@ type udpSession struct {
 }
 
 // NewUDPProxy creates a new UDP proxy
-func NewUDPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipallowlist.Manager, sessionTimeout time.Duration, maxSessions int) *UDPProxy {
+func NewUDPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipallowlist.Manager, blocklistManager *ipblocklist.Manager, sessionTimeout time.Duration, maxSessions int) *UDPProxy {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &UDPProxy{
 		service:          service,
 		allowlistManager: allowlistManager,
+		blocklistManager: blocklistManager,
 		ctx:              ctx,
 		cancel:           cancel,
 		sessions:         make(map[string]*udpSession),
@@ -125,6 +128,16 @@ func (p *UDPProxy) receiveLoop() {
 			log.Warn().
 				Str("addr", clientAddr.IP.String()).
 				Msg("Failed to parse client IP")
+			continue
+		}
+
+		// HIGHEST PRIORITY: Check IP blocklist first
+		if blocked, blockReason := p.blocklistManager.IsIPBlocked(net.ParseIP(clientIP.String())); blocked {
+			log.Warn().
+				Str("client_ip", clientIP.String()).
+				Str("service", p.service.ServiceName).
+				Str("reason", blockReason).
+				Msg("UDP packet denied: IP is blocked")
 			continue
 		}
 
@@ -520,4 +533,35 @@ func (p *UDPProxy) GetStats() map[string]interface{} {
 		"backend_addr":    fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPort),
 		"session_timeout": p.sessionTimeout.String(),
 	}
+}
+
+// TerminateConnectionsByIP forcefully closes all active UDP sessions from a specific IP
+func (p *UDPProxy) TerminateConnectionsByIP(clientIP string) int {
+	p.sessionsMu.Lock()
+	defer p.sessionsMu.Unlock()
+	
+	terminated := 0
+	
+	// Find and close all sessions for this IP
+	for sessionKey, session := range p.sessions {
+		if session.clientAddr.IP.String() == clientIP {
+			// Close the backend connection
+			if session.backendConn != nil {
+				session.backendConn.Close()
+			}
+			// Remove from sessions map
+			delete(p.sessions, sessionKey)
+			terminated++
+		}
+	}
+	
+	if terminated > 0 {
+		log.Info().
+			Str("service", p.service.ServiceName).
+			Str("client_ip", clientIP).
+			Int("terminated_count", terminated).
+			Msg("Terminated UDP sessions for IP")
+	}
+	
+	return terminated
 }

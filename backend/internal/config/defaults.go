@@ -13,6 +13,7 @@ func GetDefaultConfig() *ApplicationConfig {
 			MaxConcurrentSessions:         10000, // 0 = unlimited, 10000 = reasonable limit
 		},
 		NetworkAccessControl: NetworkAccessControlConfig{
+			BlockedIPAddresses:         []string{},
 			AllowedDynamicDNSHostnames: []string{},
 			PermanentlyAllowedIPRanges: []string{},
 			DNSRefreshIntervalSeconds:  300,

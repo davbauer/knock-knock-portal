@@ -12,6 +12,7 @@ import (
 	"github.com/davbauer/knock-knock-portal/internal/config"
 	"github.com/davbauer/knock-knock-portal/internal/handlers"
 	"github.com/davbauer/knock-knock-portal/internal/ipallowlist"
+	"github.com/davbauer/knock-knock-portal/internal/ipblocklist"
 	"github.com/davbauer/knock-knock-portal/internal/middleware"
 	"github.com/davbauer/knock-knock-portal/internal/proxy"
 	"github.com/davbauer/knock-knock-portal/internal/session"
@@ -27,6 +28,7 @@ type Router struct {
 	passwordVerifier *auth.PasswordVerifier
 	sessionManager   *session.Manager
 	allowlistManager *ipallowlist.Manager
+	blocklistManager *ipblocklist.Manager
 	proxyManager     *proxy.Manager
 	ipExtractor      *middleware.RealIPExtractor
 	indexHTMLHash    string // SHA256 hash of index.html for cache busting
@@ -39,6 +41,7 @@ func NewRouter(
 	passwordVerifier *auth.PasswordVerifier,
 	sessionManager *session.Manager,
 	allowlistManager *ipallowlist.Manager,
+	blocklistManager *ipblocklist.Manager,
 	proxyManager *proxy.Manager,
 ) *Router {
 	// Set Gin mode
@@ -68,6 +71,7 @@ func NewRouter(
 	configLoader.RegisterReloadCallback(func(newCfg *config.ApplicationConfig) {
 		ipExtractor.Reload(&newCfg.TrustedProxyConfig)
 		allowlistManager.Reload(&newCfg.NetworkAccessControl)
+		blocklistManager.Reload(&newCfg.NetworkAccessControl)
 		
 		// Reload proxy manager to apply service changes
 		if err := proxyManager.Reload(); err != nil {
@@ -84,6 +88,7 @@ func NewRouter(
 		passwordVerifier: passwordVerifier,
 		sessionManager:   sessionManager,
 		allowlistManager: allowlistManager,
+		blocklistManager: blocklistManager,
 		proxyManager:     proxyManager,
 		ipExtractor:      ipExtractor,
 	}
@@ -106,7 +111,7 @@ func (r *Router) setupRoutes() {
 		api.GET("/health", healthHandler.Handle)
 
 		// Connection info endpoint (public, returns client IP and allowlist status)
-		connectionInfoHandler := handlers.NewConnectionInfoHandler(r.allowlistManager, r.sessionManager, r.configLoader, r.ipExtractor)
+		connectionInfoHandler := handlers.NewConnectionInfoHandler(r.allowlistManager, r.blocklistManager, r.sessionManager, r.configLoader, r.ipExtractor)
 		api.GET("/connection-info", connectionInfoHandler.HandleCheck)
 
 		// Portal API (public/authenticated)
@@ -119,6 +124,7 @@ func (r *Router) setupRoutes() {
 				r.jwtManager,
 				r.sessionManager,
 				r.allowlistManager,
+				r.blocklistManager,
 			)
 			portal.POST("/login", loginHandler.Handle)
 
@@ -140,7 +146,7 @@ func (r *Router) setupRoutes() {
 		admin := api.Group("/admin")
 		{
 			// Login endpoint (public)
-			adminLoginHandler := handlers.NewAdminLoginHandler(r.passwordVerifier, r.jwtManager)
+			adminLoginHandler := handlers.NewAdminLoginHandler(r.passwordVerifier, r.jwtManager, r.blocklistManager)
 			admin.POST("/login", adminLoginHandler.Handle)
 
 		// Protected admin endpoints
@@ -155,6 +161,7 @@ func (r *Router) setupRoutes() {
 			// Connection monitoring (shows ALL active connections including anonymous)
 			connectionsHandler := handlers.NewAdminConnectionsHandler(r.proxyManager, r.sessionManager)
 			protected.GET("/connections", connectionsHandler.HandleList)
+			protected.DELETE("/connections/:ip", connectionsHandler.HandleTerminate)
 			
 			// Configuration management
 			configHandler := handlers.NewAdminConfigHandler(r.configLoader)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/davbauer/knock-knock-portal/internal/config"
 	"github.com/davbauer/knock-knock-portal/internal/ipallowlist"
+	"github.com/davbauer/knock-knock-portal/internal/ipblocklist"
 	"github.com/rs/zerolog/log"
 )
 
@@ -15,22 +16,25 @@ type Proxy interface {
 	Start() error
 	Stop() error
 	GetStats() map[string]interface{}
+	TerminateConnectionsByIP(clientIP string) int
 }
 
 // Manager handles lifecycle of all proxy instances
 type Manager struct {
 	configLoader     *config.Loader
 	allowlistManager *ipallowlist.Manager
+	blocklistManager *ipblocklist.Manager
 	proxies          map[string]Proxy
 	mu               sync.RWMutex
 	stopStatsTicker  chan struct{}
 }
 
 // NewManager creates a new proxy manager
-func NewManager(configLoader *config.Loader, allowlistManager *ipallowlist.Manager) *Manager {
+func NewManager(configLoader *config.Loader, allowlistManager *ipallowlist.Manager, blocklistManager *ipblocklist.Manager) *Manager {
 	return &Manager{
 		configLoader:     configLoader,
 		allowlistManager: allowlistManager,
+		blocklistManager: blocklistManager,
 		proxies:          make(map[string]Proxy),
 		stopStatsTicker:  make(chan struct{}),
 	}
@@ -69,7 +73,7 @@ func (m *Manager) Start() error {
 
 		// Create appropriate proxy type
 		if service.IsHTTPProtocol {
-			proxy, err = NewHTTPProxy(&cfg.ProtectedServices[i], m.allowlistManager)
+			proxy, err = NewHTTPProxy(&cfg.ProtectedServices[i], m.allowlistManager, m.blocklistManager)
 			if err != nil {
 				log.Error().
 					Err(err).
@@ -78,17 +82,17 @@ func (m *Manager) Start() error {
 				continue
 			}
 		} else if service.TransportProtocol == "tcp" {
-			proxy = NewTCPProxy(&cfg.ProtectedServices[i], m.allowlistManager, maxConnections)
+			proxy = NewTCPProxy(&cfg.ProtectedServices[i], m.allowlistManager, m.blocklistManager, maxConnections)
 		} else if service.TransportProtocol == "udp" {
 			// Get UDP session timeout from config
 			sessionTimeout := time.Duration(cfg.ProxyServerConfig.UDPSessionTimeoutSeconds) * time.Second
-			proxy = NewUDPProxy(&cfg.ProtectedServices[i], m.allowlistManager, sessionTimeout, maxConnections)
+			proxy = NewUDPProxy(&cfg.ProtectedServices[i], m.allowlistManager, m.blocklistManager, sessionTimeout, maxConnections)
 		} else if service.TransportProtocol == "both" {
 			// Create both TCP and UDP proxies for the same service
 			sessionTimeout := time.Duration(cfg.ProxyServerConfig.UDPSessionTimeoutSeconds) * time.Second
 			
 			// Start TCP proxy
-			tcpProxy := NewTCPProxy(&cfg.ProtectedServices[i], m.allowlistManager, maxConnections)
+			tcpProxy := NewTCPProxy(&cfg.ProtectedServices[i], m.allowlistManager, m.blocklistManager, maxConnections)
 			if err := tcpProxy.Start(); err != nil {
 				log.Error().
 					Err(err).
@@ -108,7 +112,7 @@ func (m *Manager) Start() error {
 			}
 			
 			// Start UDP proxy
-			udpProxy := NewUDPProxy(&cfg.ProtectedServices[i], m.allowlistManager, sessionTimeout, maxConnections)
+			udpProxy := NewUDPProxy(&cfg.ProtectedServices[i], m.allowlistManager, m.blocklistManager, sessionTimeout, maxConnections)
 			if err := udpProxy.Start(); err != nil {
 				log.Error().
 					Err(err).
@@ -411,5 +415,28 @@ func (m *Manager) validateService(service *config.ProtectedServiceConfig) error 
 		return fmt.Errorf("invalid transport_protocol: %s (must be tcp, udp, or both)", service.TransportProtocol)
 	}
 
+	return nil
+}
+
+// TerminateConnectionsByIP terminates all active connections from a specific IP across all proxies
+func (m *Manager) TerminateConnectionsByIP(clientIP string) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	if clientIP == "" {
+		return fmt.Errorf("client IP is required")
+	}
+	
+	totalTerminated := 0
+	for _, proxy := range m.proxies {
+		terminated := proxy.TerminateConnectionsByIP(clientIP)
+		totalTerminated += terminated
+	}
+	
+	log.Info().
+		Str("client_ip", clientIP).
+		Int("total_terminated", totalTerminated).
+		Msg("Terminated connections across all proxies")
+	
 	return nil
 }

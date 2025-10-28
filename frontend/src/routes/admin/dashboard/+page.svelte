@@ -51,6 +51,9 @@
 	let sessionToTerminate = $state<Session | null>(null);
 	let showTerminateDialog = $state(false);
 
+	let connectionToTerminate = $state<Connection | null>(null);
+	let showTerminateConnectionDialog = $state(false);
+
 	// Get initial tabs from URL or defaults
 	let currentMainTab = $state($page.url.searchParams.get('tab') || 'connections');
 	let currentConfigTab = $state($page.url.searchParams.get('config_tab') || 'users');
@@ -394,6 +397,51 @@
 		showTerminateDialog = true;
 	}
 
+	async function terminateConnection(connection: Connection) {
+		const token = localStorage.getItem('admin_token');
+		if (!token) {
+			goto('/admin');
+			return;
+		}
+
+		try {
+			const response = await fetch(`${API_BASE_URL}/api/admin/connections/${encodeURIComponent(connection.ip)}`, {
+				method: 'DELETE',
+				headers: {
+					Authorization: `Bearer ${token}`
+				}
+			});
+
+			if (response.status === 401) {
+				localStorage.removeItem('admin_token');
+				goto('/admin');
+				return;
+			}
+
+			if (!response.ok) {
+				throw new Error('Failed to terminate connections');
+			}
+
+			toaster.success({
+				title: 'Connections Terminated',
+				description: `All connections from ${connection.ip} have been terminated`
+			});
+
+			// Refresh the list
+			await fetchConnections();
+		} catch (err) {
+			toaster.error({
+				title: 'Termination Failed',
+				description: err instanceof Error ? err.message : 'Failed to terminate connections'
+			});
+		}
+	}
+
+	function openTerminateConnectionDialog(connection: Connection) {
+		connectionToTerminate = connection;
+		showTerminateConnectionDialog = true;
+	}
+
 	function handleLogout() {
 		localStorage.removeItem('admin_token');
 		goto('/admin');
@@ -515,7 +563,11 @@
 					</button>
 				</div>
 			{:else}
-				<ActiveConnections {connections} onRefresh={fetchConnections} />
+				<ActiveConnections
+					{connections}
+					onRefresh={fetchConnections}
+					onTerminate={openTerminateConnectionDialog}
+				/>
 			{/if}
 		</Tabs.Content>
 
@@ -750,6 +802,85 @@
 							class="bg-primary hover:bg-primary-hover flex-1 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
 						>
 							Import Configuration
+						</button>
+					</div>
+				</div>
+			</Dialog.Content>
+		</Dialog.Positioner>
+	</Dialog.Root>
+{/if}
+
+<!-- Terminate Connection Dialog -->
+{#if showTerminateConnectionDialog && connectionToTerminate}
+	<Dialog.Root
+		open={showTerminateConnectionDialog}
+		onOpenChange={(details) => {
+			if (!details.open) {
+				showTerminateConnectionDialog = false;
+				connectionToTerminate = null;
+			}
+		}}
+	>
+		<Dialog.Backdrop class="fixed inset-0 z-40 bg-black/50" />
+		<Dialog.Positioner class="fixed inset-0 z-50 flex items-center justify-center p-4">
+			<Dialog.Content class="bg-base-100 w-full max-w-md rounded-xl shadow-xl">
+				<div class="p-6">
+					<div class="mb-6 flex items-center gap-4">
+						<div class="bg-error/10 flex h-12 w-12 items-center justify-center rounded-full">
+							<Trash2 class="text-error h-6 w-6" />
+						</div>
+						<div class="flex-1">
+							<Dialog.Title class="text-base-content text-lg font-semibold">
+								Terminate Connections
+							</Dialog.Title>
+							<Dialog.Description class="text-base-muted text-sm">
+								This action cannot be undone
+							</Dialog.Description>
+						</div>
+					</div>
+
+					<div class="border-border rounded-lg border bg-base-200/50 p-4">
+						<p class="text-base-content text-sm">
+							Are you sure you want to terminate all connections from:
+						</p>
+						<code class="bg-base-100 text-base-content mt-2 block rounded px-2 py-1 font-mono text-sm">
+							{connectionToTerminate.ip}
+						</code>
+						{#if connectionToTerminate.authenticated}
+							<p class="text-base-muted mt-2 text-xs">
+								User: <span class="font-semibold">{connectionToTerminate.username}</span>
+							</p>
+						{:else}
+							<p class="text-warning mt-2 text-xs font-medium">
+								This is a permanent allowlist entry
+							</p>
+						{/if}
+						<p class="text-base-muted mt-2 text-xs">
+							Active sessions: <span class="font-semibold">{connectionToTerminate.total_sessions}</span>
+						</p>
+					</div>
+
+					<div class="mt-6 flex gap-3">
+						<button
+							onclick={() => {
+								showTerminateConnectionDialog = false;
+								connectionToTerminate = null;
+							}}
+							class="text-base-content bg-base-200 hover:bg-base-300 flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+						>
+							Cancel
+						</button>
+						<button
+							onclick={() => {
+								if (connectionToTerminate) {
+									terminateConnection(connectionToTerminate);
+									showTerminateConnectionDialog = false;
+									connectionToTerminate = null;
+								}
+							}}
+							class="bg-error hover:bg-error-hover flex-1 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors"
+						>
+							Terminate Connections
 						</button>
 					</div>
 				</div>

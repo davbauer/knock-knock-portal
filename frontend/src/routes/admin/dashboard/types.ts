@@ -57,6 +57,7 @@ export interface Config {
 		session_cleanup_interval_seconds: number;
 	};
 	network_access_control: {
+		blocked_ip_addresses: string[];
 		allowed_dynamic_dns_hostnames: string[];
 		permanently_allowed_ip_ranges: string[];
 		dns_refresh_interval_seconds: number;

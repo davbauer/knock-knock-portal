@@ -126,3 +126,23 @@ func extractIP(ipWithPort string) string {
 	// Remove any trailing colon just in case
 	return strings.TrimSuffix(ipWithPort, ":")
 }
+
+// HandleTerminate handles DELETE /api/admin/connections/:ip
+// Terminates all active connections from a specific IP address
+func (h *AdminConnectionsHandler) HandleTerminate(c *gin.Context) {
+	ip := c.Param("ip")
+	
+	if ip == "" {
+		c.JSON(400, models.NewErrorResponse("IP address is required", "INVALID_REQUEST"))
+		return
+	}
+	
+	// Terminate all connections from this IP across all proxies
+	err := h.proxyManager.TerminateConnectionsByIP(ip)
+	if err != nil {
+		c.JSON(500, models.NewErrorResponse("Failed to terminate connections: "+err.Error(), "TERMINATION_ERROR"))
+		return
+	}
+	
+	c.JSON(200, models.NewAPIResponse("All connections from "+ip+" have been terminated successfully", nil))
+}

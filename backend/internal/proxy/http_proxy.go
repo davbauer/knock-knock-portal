@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/davbauer/knock-knock-portal/internal/config"
 	"github.com/davbauer/knock-knock-portal/internal/ipallowlist"
+	"github.com/davbauer/knock-knock-portal/internal/ipblocklist"
 	"github.com/rs/zerolog/log"
 )
 
@@ -18,6 +20,7 @@ import (
 type HTTPProxy struct {
 	service          *config.ProtectedServiceConfig
 	allowlistManager *ipallowlist.Manager
+	blocklistManager *ipblocklist.Manager
 	server           *http.Server
 	proxy            *httputil.ReverseProxy
 	ctx              context.Context
@@ -29,7 +32,7 @@ type HTTPProxy struct {
 }
 
 // NewHTTPProxy creates a new HTTP reverse proxy
-func NewHTTPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipallowlist.Manager) (*HTTPProxy, error) {
+func NewHTTPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipallowlist.Manager, blocklistManager *ipblocklist.Manager) (*HTTPProxy, error) {
 	backendURL, err := url.Parse(fmt.Sprintf("http://%s:%d", service.BackendTargetHost, service.BackendTargetPort))
 	if err != nil {
 		return nil, fmt.Errorf("invalid backend URL: %w", err)
@@ -40,6 +43,7 @@ func NewHTTPProxy(service *config.ProtectedServiceConfig, allowlistManager *ipal
 	hp := &HTTPProxy{
 		service:          service,
 		allowlistManager: allowlistManager,
+		blocklistManager: blocklistManager,
 		ctx:              ctx,
 		cancel:           cancel,
 		proxy:            httputil.NewSingleHostReverseProxy(backendURL),
@@ -100,6 +104,18 @@ func (p *HTTPProxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		log.Warn().Str("addr", r.RemoteAddr).Msg("Failed to parse client IP")
 		http.Error(w, "Invalid client address", http.StatusBadRequest)
+		return
+	}
+
+	// HIGHEST PRIORITY: Check IP blocklist first
+	if blocked, blockReason := p.blocklistManager.IsIPBlocked(net.ParseIP(clientIP.String())); blocked {
+		log.Warn().
+			Str("client_ip", clientIP.String()).
+			Str("service", p.service.ServiceName).
+			Str("path", r.URL.Path).
+			Str("reason", blockReason).
+			Msg("HTTP request denied: IP is blocked")
+		http.Error(w, "Access Denied", http.StatusForbidden)
 		return
 	}
 
@@ -214,4 +230,15 @@ func (p *HTTPProxy) GetStats() map[string]interface{} {
 		"backend_addr":    fmt.Sprintf("http://%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPort),
 		"circuit_breaker": p.circuitBreaker.GetStats(),
 	}
+}
+
+// TerminateConnectionsByIP is not supported for HTTP proxy (connections are short-lived)
+func (p *HTTPProxy) TerminateConnectionsByIP(clientIP string) int {
+	// HTTP connections are short-lived and managed by the HTTP server
+	// There's no persistent connection to terminate
+	log.Debug().
+		Str("service", p.service.ServiceName).
+		Str("client_ip", clientIP).
+		Msg("HTTP proxy does not support connection termination (connections are short-lived)")
+	return 0
 }

@@ -1,13 +1,14 @@
 <script lang="ts">
-	import { Network, Users, Shield, CircleCheck } from 'lucide-svelte';
-	import type { Connection } from './types';
+	import { Network, Users, Shield, Download, Upload, Trash2 } from 'lucide-svelte';
+	import type { Connection } from '../types';
 
 	interface Props {
 		connections: Connection[];
 		onRefresh?: () => void;
+		onTerminate?: (connection: Connection) => void;
 	}
 
-	let { connections, onRefresh }: Props = $props();
+	let { connections, onRefresh, onTerminate }: Props = $props();
 
 	// Helper to format bytes
 	function formatBytes(bytes: number): string {
@@ -136,6 +137,11 @@
 							>
 								Sessions
 							</th>
+							<th
+								class="text-base-muted px-6 py-3 text-right text-xs font-medium uppercase tracking-wider"
+							>
+								Actions
+							</th>
 						</tr>
 					</thead>
 					<tbody class="divide-border divide-y">
@@ -220,6 +226,18 @@
 									>
 										{conn.total_sessions}
 									</span>
+								</td>
+								<td class="whitespace-nowrap px-6 py-4 text-right">
+									{#if onTerminate}
+										<button
+											onclick={() => onTerminate?.(conn)}
+											class="bg-error/10 text-error hover:bg-error hover:text-white inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
+											title="Terminate all connections from {conn.ip}"
+										>
+											<Trash2 class="h-3.5 w-3.5" />
+											Terminate
+										</button>
+									{/if}
 								</td>
 							</tr>
 						{/each}

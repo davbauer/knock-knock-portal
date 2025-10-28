@@ -191,6 +191,29 @@
 		<div class="space-y-4">
 			<Field.Root>
 				<Field.Label class="text-base-content mb-2 text-sm font-medium"
+					>Blocked IP Addresses</Field.Label
+				>
+				<textarea
+					value={config.network_access_control.blocked_ip_addresses?.join('\n') || ''}
+					rows={3}
+					placeholder="e.g., 192.0.2.100, 198.51.100.0/24"
+					class="border-border bg-base-100 text-base-content focus:ring-primary w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2"
+					oninput={(e) => {
+						configStore.updateConfig((cfg) => {
+							const value = e.currentTarget.value;
+							cfg.network_access_control.blocked_ip_addresses = value
+								.split('\n')
+								.filter((s) => s.trim());
+						});
+					}}
+				></textarea>
+				<Field.HelperText class="text-base-muted mt-1 text-xs"
+					>One IP or CIDR range per line (highest priority - blocks all access)</Field.HelperText
+				>
+			</Field.Root>
+
+			<Field.Root>
+				<Field.Label class="text-base-content mb-2 text-sm font-medium"
 					>Permanently Allowed IP Ranges</Field.Label
 				>
 				<textarea
