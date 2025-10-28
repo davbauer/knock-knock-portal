@@ -55,18 +55,15 @@
 		content="Authentication-based port access gateway with dynamic IP allowlist, session management, and proxy services."
 	/>
 	
-	<!-- Security Headers -->
-	<meta http-equiv="X-Content-Type-Options" content="nosniff" />
-	<meta http-equiv="X-Frame-Options" content="DENY" />
-	<meta http-equiv="X-XSS-Protection" content="1; mode=block" />
-	<meta name="referrer" content="strict-origin-when-cross-origin" />
-	
 	<!-- Viewport -->
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 	
 	<!-- Theme Color -->
 	<meta name="theme-color" content="#3b82f6" />
 	<meta name="color-scheme" content="light dark" />
+	
+	<!-- Referrer Policy (can be set via meta tag) -->
+	<meta name="referrer" content="strict-origin-when-cross-origin" />
 </svelte:head>
 
 <div class="bg-base-200 flex min-h-screen flex-col">

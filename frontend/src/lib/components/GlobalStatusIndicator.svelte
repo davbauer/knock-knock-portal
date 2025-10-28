@@ -25,6 +25,9 @@
 		service_id: string;
 		service_name: string;
 		description: string;
+		proxy_listen_port_start?: number;
+		proxy_listen_port_end?: number;
+		transport_protocol?: string;
 		access_granted: boolean;
 		access_reasons: AccessReason[];
 		access_denied_reason?: string;
@@ -443,11 +446,25 @@
 													<div class="text-base-content text-sm font-medium">
 														{service.service_name}
 													</div>
-													{#if service.description}
-														<div class="text-base-content/60 text-xs">
+													<div class="text-base-content/60 mt-0.5 text-xs">
+														{#if service.proxy_listen_port_start && service.proxy_listen_port_end}
+															{#if service.proxy_listen_port_start === service.proxy_listen_port_end}
+																Port {service.proxy_listen_port_start}
+															{:else}
+																Ports {service.proxy_listen_port_start}-{service.proxy_listen_port_end}
+															{/if}
+															{#if service.transport_protocol}
+																<span class="mx-1">•</span>
+																{service.transport_protocol.toUpperCase()}
+															{/if}
+														{/if}
+														{#if service.description}
+															{#if service.proxy_listen_port_start}
+																<span class="mx-1">•</span>
+															{/if}
 															{service.description}
-														</div>
-													{/if}
+														{/if}
+													</div>
 												</div>
 												<div class="ml-2">
 													{#if service.access_granted}

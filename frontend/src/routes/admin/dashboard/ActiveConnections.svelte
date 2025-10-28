@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Network, Users, Shield, Download, Upload, Trash2 } from 'lucide-svelte';
-	import type { Connection } from '../types';
+	import { Network, Users, Shield, Download, Upload, Trash2, CheckCircle2 } from 'lucide-svelte';
+	import type { Connection } from './types';
 
 	interface Props {
 		connections: Connection[];
@@ -186,7 +186,7 @@
 										<span
 											class="bg-success/10 text-success inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
 										>
-											<CircleCheck class="h-3.5 w-3.5" />
+											<CheckCircle2 class="h-3.5 w-3.5" />
 											Authenticated
 										</span>
 									{:else}

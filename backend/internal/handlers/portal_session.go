@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"net/netip"
 	"time"
 
 	"github.com/davbauer/knock-knock-portal/internal/config"
@@ -9,7 +8,6 @@ import (
 	"github.com/davbauer/knock-knock-portal/internal/middleware"
 	"github.com/davbauer/knock-knock-portal/internal/models"
 	"github.com/davbauer/knock-knock-portal/internal/session"
-	"github.com/davbauer/knock-knock-portal/internal/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
@@ -62,111 +60,36 @@ func (h *PortalSessionHandler) HandleStatus(c *gin.Context) {
 		expiresIn = 0
 	}
 
-	// Get service names and detailed access info
+	// Get service information
 	cfg := h.configLoader.GetConfig()
-	allowedServices := utils.GetServiceNames(cfg, sess.AllowedServiceIDs)
-	serviceAccessList := h.getServiceAccessDetails(cfg, clientIP, sess)
+	_, ipAllowlistReason := h.ipAllowListManager.IsIPAllowed(clientIP)
+	serviceAccessList := BuildServiceAccessList(cfg, clientIP, sess, ipAllowlistReason)
+
+	// Extract simplified service details for user's allowed services only
+	allowedServiceDetails := ExtractAllowedServiceDetails(serviceAccessList, sess.AllowedServiceIDs)
 
 	response := map[string]interface{}{
 		"session": map[string]interface{}{
-			"session_id":          sess.SessionID,
-			"username":            sess.Username,
-			"user_id":             sess.UserID,
-			"authenticated_ips":   ipStrings,
-			"current_ip":          clientIP.String(),
-			"current_ip_allowed":  sess.IsIPAllowed(clientIP),
-			"created_at":          sess.CreatedAt,
-			"last_activity_at":    sess.LastActivityAt,
-			"expires_at":          sess.ExpiresAt,
-			"expires_in_seconds":  int(expiresIn),
-			"auto_extend_enabled": sess.AutoExtendEnabled,
-			"allowed_service_ids": sess.AllowedServiceIDs,
-			"allowed_services":    allowedServices,
-			"services":            serviceAccessList,
-			"total_services":      len(serviceAccessList),
-			"active":              !sess.IsExpired(),
+			"session_id":              sess.SessionID,
+			"username":                sess.Username,
+			"user_id":                 sess.UserID,
+			"authenticated_ips":       ipStrings,
+			"current_ip":              clientIP.String(),
+			"current_ip_allowed":      sess.IsIPAllowed(clientIP),
+			"created_at":              sess.CreatedAt,
+			"last_activity_at":        sess.LastActivityAt,
+			"expires_at":              sess.ExpiresAt,
+			"expires_in_seconds":      int(expiresIn),
+			"auto_extend_enabled":     sess.AutoExtendEnabled,
+			"allowed_service_ids":     sess.AllowedServiceIDs,
+			"allowed_service_details": allowedServiceDetails,
+			"services":                serviceAccessList,
+			"total_services":          len(serviceAccessList),
+			"active":                  !sess.IsExpired(),
 		},
 	}
 
 	c.JSON(200, models.NewAPIResponse("Session status retrieved", response))
-}
-
-// getServiceAccessDetails returns detailed service access information
-func (h *PortalSessionHandler) getServiceAccessDetails(cfg *config.ApplicationConfig, clientIP netip.Addr, sess *session.Session) []map[string]interface{} {
-	serviceAccessList := []map[string]interface{}{}
-
-	// Check base IP allowlist status
-	_, baseReason := h.ipAllowListManager.IsIPAllowed(clientIP)
-
-	for _, service := range cfg.ProtectedServices {
-		if !service.Enabled {
-			continue
-		}
-
-		serviceAccess := map[string]interface{}{
-			"service_id":   service.ServiceID,
-			"service_name": service.ServiceName,
-			"description":  service.Description,
-		}
-
-		accessGranted := false
-		accessReasons := []map[string]string{}
-
-		// 1. Check if IP is allowed via permanent IP range
-		if baseReason == "permanent" {
-			accessGranted = true
-			accessReasons = append(accessReasons, map[string]string{
-				"method":      "permanent_ip_range",
-				"description": "Your IP is in the permanently allowed IP ranges (unrestricted access)",
-			})
-		}
-
-		// 2. Check if IP is allowed via DNS hostname
-		if baseReason == "dns_resolved" {
-			accessGranted = true
-			accessReasons = append(accessReasons, map[string]string{
-				"method":      "dynamic_dns_hostname",
-				"description": "Your IP matches an allowed dynamic DNS hostname (unrestricted access)",
-			})
-		}
-
-		// 3. Check session-based access
-		if sess.IsIPAllowed(clientIP) {
-			// Check if user has access to this specific service
-			hasServiceAccess := len(sess.AllowedServiceIDs) == 0 // Empty = all services
-			if !hasServiceAccess {
-				for _, allowedID := range sess.AllowedServiceIDs {
-					if allowedID == service.ServiceID {
-						hasServiceAccess = true
-						break
-					}
-				}
-			}
-
-			if hasServiceAccess {
-				accessGranted = true
-				sessionScope := "all services"
-				if len(sess.AllowedServiceIDs) > 0 {
-					sessionScope = "specific services only"
-				}
-				accessReasons = append(accessReasons, map[string]string{
-					"method":      "authenticated_session",
-					"description": "Session access (user: " + sess.Username + ", scope: " + sessionScope + ")",
-				})
-			}
-		}
-
-		serviceAccess["access_granted"] = accessGranted
-		serviceAccess["access_reasons"] = accessReasons
-
-		if !accessGranted {
-			serviceAccess["access_denied_reason"] = "No access method grants permission to this service"
-		}
-
-		serviceAccessList = append(serviceAccessList, serviceAccess)
-	}
-
-	return serviceAccessList
 }
 
 // HandleLogout handles POST /api/portal/session/logout
@@ -217,5 +140,44 @@ func (h *PortalSessionHandler) HandleAddIP(c *gin.Context) {
 
 	c.JSON(200, models.NewAPIResponse("IP address added to session", map[string]interface{}{
 		"added_ip": clientIP.String(),
+	}))
+}
+
+// HandleExtendSession handles POST /api/portal/session/extend
+func (h *PortalSessionHandler) HandleExtendSession(c *gin.Context) {
+	claims, ok := middleware.GetJWTClaims(c)
+	if !ok {
+		c.JSON(401, models.NewErrorResponse("Unauthorized", "UNAUTHORIZED"))
+		return
+	}
+
+	sess, err := h.sessionManager.GetSessionByID(claims.SessionID)
+	if err != nil {
+		c.JSON(404, models.NewErrorResponse("Session not found or expired", "SESSION_NOT_FOUND"))
+		return
+	}
+
+	// Get the default session duration from config
+	cfg := h.configLoader.GetConfig()
+	extendDuration := time.Duration(cfg.SessionConfig.DefaultSessionDurationSeconds) * time.Second
+
+	// Extend the session
+	sess.ExtendSession(extendDuration)
+
+	// Calculate new expiry time
+	expiresIn := time.Until(sess.ExpiresAt).Seconds()
+	if expiresIn < 0 {
+		expiresIn = 0
+	}
+
+	log.Info().
+		Str("session_id", claims.SessionID).
+		Str("user_id", claims.UserID).
+		Str("new_expiry", sess.ExpiresAt.Format(time.RFC3339)).
+		Msg("User manually extended session")
+
+	c.JSON(200, models.NewAPIResponse("Session extended successfully", map[string]interface{}{
+		"expires_at":         sess.ExpiresAt,
+		"expires_in_seconds": int(expiresIn),
 	}))
 }

@@ -19,18 +19,29 @@
 	import { API_BASE_URL } from '$lib/config';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 
+	interface ServiceDetail {
+		service_id: string;
+		service_name: string;
+		proxy_listen_port_start: number;
+		proxy_listen_port_end: number;
+		transport_protocol: string;
+		description?: string;
+	}
+
 	interface SessionInfo {
 		session_id: string;
 		username: string;
 		user_id: string;
 		authenticated_ips: string[];
+		current_ip: string;
+		current_ip_allowed: boolean;
 		created_at: string;
 		last_activity_at: string;
 		expires_at: string;
 		expires_in_seconds: number;
 		auto_extend_enabled: boolean;
 		allowed_service_ids: string[];
-		allowed_services: string[];
+		allowed_service_details?: ServiceDetail[];
 		active: boolean;
 	}
 
@@ -40,6 +51,10 @@
 	let timeRemaining = $state('');
 	let timeRemainingPercent = $state(100);
 	let isExpiringSoon = $state(false);
+	let showIPChangeDialog = $state(false);
+	let newIPDetected = $state<string | null>(null);
+	let isAddingIP = $state(false);
+	let isExtendingSession = $state(false);
 
 	async function fetchSessionStatus() {
 		const token = localStorage.getItem('portal_token');
@@ -57,6 +72,15 @@
 			});
 
 			if (response.status === 401) {
+				// Session invalid or expired - redirect to login
+				localStorage.removeItem('portal_token');
+				localStorage.removeItem('portal_session');
+				goto('/');
+				return;
+			}
+
+			if (response.status === 404) {
+				// Session not found or terminated - redirect to login
 				localStorage.removeItem('portal_token');
 				localStorage.removeItem('portal_session');
 				goto('/');
@@ -68,12 +92,97 @@
 			}
 
 			const data = await response.json();
-			sessionInfo = data.data.session;
+			const newSessionInfo = data.data.session;
+			
+			// Check if current IP is different from authenticated IPs
+			if (newSessionInfo.current_ip && !newSessionInfo.current_ip_allowed) {
+				// User's IP has changed and is not authorized
+				newIPDetected = newSessionInfo.current_ip;
+				showIPChangeDialog = true;
+			}
+			
+			sessionInfo = newSessionInfo;
 			error = '';
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load session';
+			// If there's a persistent error, redirect to login after a few failures
 		} finally {
 			isLoading = false;
+		}
+	}
+
+	async function handleAddNewIP() {
+		if (!newIPDetected) return;
+		
+		isAddingIP = true;
+		const token = localStorage.getItem('portal_token');
+
+		try {
+			const response = await fetch(`${API_BASE_URL}/api/portal/session/add-ip`, {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${token}`
+				}
+			});
+
+			if (!response.ok) {
+				throw new Error('Failed to add IP to session');
+			}
+
+			// Success - refresh session status
+			showIPChangeDialog = false;
+			newIPDetected = null;
+			await fetchSessionStatus();
+		} catch (err) {
+			console.error('Error adding IP:', err);
+			error = err instanceof Error ? err.message : 'Failed to add IP';
+		} finally {
+			isAddingIP = false;
+		}
+	}
+
+	function handleDismissIPDialog() {
+		// User declined to add new IP - log them out
+		showIPChangeDialog = false;
+		newIPDetected = null;
+		handleLogout();
+	}
+
+	async function handleExtendSession() {
+		isExtendingSession = true;
+		const token = localStorage.getItem('portal_token');
+
+		if (!token) {
+			goto('/');
+			return;
+		}
+
+		try {
+			const response = await fetch(`${API_BASE_URL}/api/portal/session/extend`, {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${token}`
+				}
+			});
+
+			if (response.status === 401 || response.status === 404) {
+				localStorage.removeItem('portal_token');
+				localStorage.removeItem('portal_session');
+				goto('/');
+				return;
+			}
+
+			if (!response.ok) {
+				throw new Error('Failed to extend session');
+			}
+
+			// Refresh session status to get updated expiry
+			await fetchSessionStatus();
+		} catch (err) {
+			console.error('Error extending session:', err);
+			error = err instanceof Error ? err.message : 'Failed to extend session';
+		} finally {
+			isExtendingSession = false;
 		}
 	}
 
@@ -252,12 +361,32 @@
 									{timeRemaining}
 								</p>
 							</div>
-							{#if sessionInfo.auto_extend_enabled}
-								<div class="bg-primary/10 flex items-center gap-2 rounded-lg px-3 py-2">
-									<Zap class="text-primary h-5 w-5" />
-									<span class="text-primary text-sm font-semibold">Auto-Extend Enabled</span>
-								</div>
-							{/if}
+							<div class="flex items-center gap-3">
+								{#if sessionInfo.auto_extend_enabled}
+									<div class="group relative bg-primary/10 flex items-center gap-2 rounded-lg px-3 py-2">
+										<Zap class="text-primary h-5 w-5" />
+										<span class="text-primary text-sm font-semibold">Auto-Extend Enabled</span>
+										<!-- Tooltip -->
+										<div
+											class="border-border bg-base-100 invisible absolute bottom-full right-0 mb-2 w-72 rounded-lg border p-3 text-xs shadow-lg opacity-0 transition-all group-hover:visible group-hover:opacity-100"
+										>
+											<p class="text-base-content leading-relaxed">
+												When enabled, your session will automatically extend whenever you connect
+												to any accessible service. This keeps you logged in as long as you're
+												actively using the services.
+											</p>
+										</div>
+									</div>
+								{/if}
+								<button
+									onclick={handleExtendSession}
+									disabled={isExtendingSession}
+									class="bg-primary hover:bg-primary/90 flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-50"
+								>
+									<Clock class="h-4 w-4" />
+									{isExtendingSession ? 'Extending...' : 'Extend Now'}
+								</button>
+							</div>
 						</div>
 						<div class="bg-base-200 h-3 overflow-hidden rounded-full">
 							<div
@@ -395,33 +524,6 @@
 								</div>
 							</div>
 						</div>
-
-						<!-- Auto-Extend Status -->
-						<div class="flex items-center justify-between py-4 first:pt-0 last:pb-0">
-							<div class="flex items-center gap-3">
-								<div class="bg-primary/10 rounded-lg p-2">
-									<Zap class="text-primary h-5 w-5" />
-								</div>
-								<div>
-									<p class="text-base-muted text-xs font-medium uppercase tracking-wide">
-										Auto-Extend on Connection
-									</p>
-									<p class="text-base-content mt-0.5 text-sm font-semibold">
-										{#if sessionInfo.auto_extend_enabled}
-											<span class="text-success flex items-center gap-1">
-												<CheckCircle2 class="h-4 w-4" />
-												Enabled
-											</span>
-										{:else}
-											<span class="text-base-muted flex items-center gap-1">
-												<AlertCircle class="h-4 w-4" />
-												Disabled
-											</span>
-										{/if}
-									</p>
-								</div>
-							</div>
-						</div>
 					</div>
 				</div>
 
@@ -435,7 +537,36 @@
 					</div>
 
 					<div class="p-6">
-						{#if sessionInfo.allowed_services.length === 0}
+						{#if sessionInfo.allowed_service_details && sessionInfo.allowed_service_details.length > 0}
+							<div class="space-y-2">
+								{#each sessionInfo.allowed_service_details as service}
+									<div
+										class="border-border bg-base-200/50 hover:border-primary/50 hover:bg-primary/5 group flex items-center gap-3 rounded-lg border p-3 transition-all hover:shadow-md"
+									>
+										<div
+											class="bg-primary/10 group-hover:bg-primary/20 rounded-lg p-2 transition-colors"
+										>
+											<Server class="text-primary h-5 w-5" />
+										</div>
+										<div class="flex-1">
+											<p class="text-base-content font-medium">{service.service_name}</p>
+											<p class="text-base-muted text-xs mt-0.5">
+												{#if service.proxy_listen_port_start === service.proxy_listen_port_end}
+													Port {service.proxy_listen_port_start}
+												{:else}
+													Ports {service.proxy_listen_port_start}-{service.proxy_listen_port_end}
+												{/if}
+												<span class="mx-1">•</span>
+												{service.transport_protocol.toUpperCase()}
+											</p>
+										</div>
+										<div class="bg-success/10 rounded-full px-2.5 py-1">
+											<span class="text-success text-xs font-semibold">Active</span>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{:else}
 							<div class="bg-primary/5 rounded-xl p-6 text-center">
 								<div
 									class="bg-primary/10 mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-xl"
@@ -447,26 +578,6 @@
 									You have unrestricted access to all protected services
 								</p>
 							</div>
-						{:else}
-							<div class="space-y-2">
-								{#each sessionInfo.allowed_services as service}
-									<div
-										class="border-border bg-base-200/50 hover:border-primary/50 hover:bg-primary/5 group flex items-center gap-3 rounded-lg border p-3 transition-all hover:shadow-md"
-									>
-										<div
-											class="bg-primary/10 group-hover:bg-primary/20 rounded-lg p-2 transition-colors"
-										>
-											<Server class="text-primary h-5 w-5" />
-										</div>
-										<div class="flex-1">
-											<p class="text-base-content font-medium">{service}</p>
-										</div>
-										<div class="bg-success/10 rounded-full px-2.5 py-1">
-											<span class="text-success text-xs font-semibold">Active</span>
-										</div>
-									</div>
-								{/each}
-							</div>
 						{/if}
 					</div>
 				</div>
@@ -474,3 +585,63 @@
 		</div>
 	{/if}
 </div>
+
+<!-- IP Change Detection Dialog -->
+{#if showIPChangeDialog && newIPDetected}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+		<div
+			class="border-border bg-base-100 w-full max-w-md overflow-hidden rounded-2xl border shadow-2xl"
+			transition:slide
+		>
+			<div class="bg-warning/10 border-warning/20 border-b px-6 py-4">
+				<h3 class="text-warning flex items-center gap-2 text-lg font-bold">
+					<AlertCircle class="h-6 w-6" />
+					IP Address Changed
+				</h3>
+			</div>
+
+			<div class="p-6">
+				<p class="text-base-content mb-4 text-sm leading-relaxed">
+					Your IP address has changed to <strong class="text-primary font-mono"
+						>{newIPDetected}</strong
+					>. This new IP is not currently authorized for your session.
+				</p>
+
+				<div class="bg-base-200 mb-6 rounded-lg p-4">
+					<p class="text-base-muted mb-2 text-xs font-semibold uppercase">Current Authorized IPs</p>
+					{#if sessionInfo?.authenticated_ips}
+						<div class="space-y-1">
+							{#each sessionInfo.authenticated_ips as ip}
+								<div class="flex items-center gap-2">
+									<CheckCircle2 class="text-success h-4 w-4" />
+									<span class="text-base-content font-mono text-sm">{ip}</span>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
+				<p class="text-base-muted mb-6 text-sm">
+					Would you like to authorize this new IP address to continue using your current session?
+				</p>
+
+				<div class="flex gap-3">
+					<button
+						onclick={handleDismissIPDialog}
+						disabled={isAddingIP}
+						class="border-border hover:bg-base-200 flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50"
+					>
+						Logout
+					</button>
+					<button
+						onclick={handleAddNewIP}
+						disabled={isAddingIP}
+						class="bg-primary hover:bg-primary/90 flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-50"
+					>
+						{isAddingIP ? 'Authorizing...' : 'Authorize New IP'}
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
