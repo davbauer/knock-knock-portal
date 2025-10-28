@@ -222,8 +222,13 @@ func (m *Manager) logStats() {
 func (m *Manager) Stop() error {
 	log.Info().Msg("Stopping proxy manager")
 
-	// Stop stats logger
-	close(m.stopStatsTicker)
+	// Stop stats logger safely
+	select {
+	case <-m.stopStatsTicker:
+		// Already closed
+	default:
+		close(m.stopStatsTicker)
+	}
 
 	m.mu.Lock()
 	proxies := make(map[string]Proxy)
@@ -355,6 +360,9 @@ func (m *Manager) Reload() error {
 	if err := m.Stop(); err != nil {
 		log.Error().Err(err).Msg("Error during proxy manager stop")
 	}
+
+	// Recreate the stopStatsTicker channel for the new stats logger
+	m.stopStatsTicker = make(chan struct{})
 
 	// Start with new configuration
 	return m.Start()
