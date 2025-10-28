@@ -69,7 +69,6 @@ WORKDIR /app
 # Copy binaries and assets
 COPY --from=backend-builder /build/backend/knock-knock ./knock-knock
 COPY --from=frontend-builder /build/backend/dist_frontend ./dist_frontend
-COPY backend/config.example.yml ./config.example.yml
 
 # Create directories
 RUN mkdir -p /app/config /app/logs && \
