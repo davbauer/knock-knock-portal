@@ -14,11 +14,27 @@ Stop worrying about exposing services to the internet. Users authenticate once, 
 
 Knock-Knock Portal is a lightweight authentication gateway that sits in front of your services (databases, admin panels, APIs, etc.) and controls who can access them. Instead of managing complex firewall rules or VPNs, users simply log in through a web portal and get temporary access.
 
+**Think of it as:**
+- Port knocking with a web interface
+- A simpler alternative to VPNs (WireGuard, Tailscale, OpenVPN)
+- Like Authelia or Authentik, but for **any TCP/UDP service** (not just HTTP)
+- A self-hosted Cloudflare Tunnel alternative with authentication
+- Web-based firewall control for non-technical users
+
 **Perfect for:**
 - 🏠 Homelab enthusiasts protecting self-hosted services
 - 🏢 Small teams needing simple service access control
 - 🔧 Developers securing staging/test environments
 - 🌐 Anyone exposing services to the internet safely
+
+**Works with any service:**
+- Databases (PostgreSQL, MySQL, MongoDB, Redis)
+- Game servers (Minecraft, Valheim, CS:GO)
+- Remote access (SSH, RDP, VNC)
+- Media servers (Plex, Jellyfin, Emby)
+- Smart home (Home Assistant, Node-RED)
+- Development tools (GitLab, Jenkins, Portainer)
+- Any TCP or UDP application
 
 ---
 
