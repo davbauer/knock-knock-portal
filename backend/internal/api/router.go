@@ -143,20 +143,24 @@ func (r *Router) setupRoutes() {
 			adminLoginHandler := handlers.NewAdminLoginHandler(r.passwordVerifier, r.jwtManager)
 			admin.POST("/login", adminLoginHandler.Handle)
 
-			// Protected admin endpoints
-			protected := admin.Group("")
-			protected.Use(middleware.AuthMiddleware(r.jwtManager, auth.TokenTypeAdmin))
-			{
-				// Session management
-				sessionsHandler := handlers.NewAdminSessionsHandler(r.sessionManager)
-				protected.GET("/sessions", sessionsHandler.HandleList)
-				protected.DELETE("/sessions/:session_id", sessionsHandler.HandleDelete)
-
-				// Configuration management
-				configHandler := handlers.NewAdminConfigHandler(r.configLoader)
-				protected.GET("/config", configHandler.HandleGetConfig)
-				protected.PUT("/config", configHandler.HandleUpdateConfig)
-			}
+		// Protected admin endpoints
+		protected := admin.Group("")
+		protected.Use(middleware.AuthMiddleware(r.jwtManager, auth.TokenTypeAdmin))
+		{
+			// User/Session management (authenticated portal users only)
+			sessionsHandler := handlers.NewAdminSessionsHandler(r.sessionManager, r.allowlistManager, r.proxyManager)
+			protected.GET("/users", sessionsHandler.HandleList)
+			protected.DELETE("/users/:session_id", sessionsHandler.HandleDelete)
+			
+			// Connection monitoring (shows ALL active connections including anonymous)
+			connectionsHandler := handlers.NewAdminConnectionsHandler(r.proxyManager, r.sessionManager)
+			protected.GET("/connections", connectionsHandler.HandleList)
+			
+			// Configuration management
+			configHandler := handlers.NewAdminConfigHandler(r.configLoader)
+			protected.GET("/config", configHandler.HandleGetConfig)
+			protected.PUT("/config", configHandler.HandleUpdateConfig)
+		}
 		}
 	}
 

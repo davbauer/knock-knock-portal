@@ -257,6 +257,96 @@ func (m *Manager) Stop() error {
 	return nil
 }
 
+// TerminateSessionsByIP closes all active TCP/UDP sessions for a specific IP
+// This is called when a session is terminated and IPs need to be instantly disconnected
+func (m *Manager) TerminateSessionsByIP(clientIP string) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	totalTerminated := 0
+
+	for serviceID, proxy := range m.proxies {
+		var terminated int
+
+		// Check proxy type and terminate accordingly
+		if udpProxy, ok := proxy.(*UDPProxy); ok {
+			terminated = udpProxy.TerminateSessionsByIP(clientIP)
+		} else if tcpProxy, ok := proxy.(*TCPProxy); ok {
+			terminated = tcpProxy.TerminateSessionsByIP(clientIP)
+		}
+
+		if terminated > 0 {
+			log.Info().
+				Str("service_id", serviceID).
+				Str("client_ip", clientIP).
+				Int("connections_terminated", terminated).
+				Msg("Terminated sessions for IP")
+			totalTerminated += terminated
+		}
+	}
+
+	return totalTerminated
+}
+
+// GetStatsByIP returns aggregated statistics for a specific client IP across all proxies
+func (m *Manager) GetStatsByIP(clientIP string) map[string]interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	aggregated := map[string]interface{}{
+		"total_packets_received": int64(0),
+		"total_packets_sent":     int64(0),
+		"total_bytes_received":   int64(0),
+		"total_bytes_sent":       int64(0),
+		"total_sessions":         0, // Combined TCP + UDP sessions
+		"services":               []map[string]interface{}{},
+	}
+
+	var totalPacketsRx, totalPacketsTx, totalBytesRx, totalBytesTx int64
+	var totalSessions int
+	services := []map[string]interface{}{}
+
+	for serviceID, proxy := range m.proxies {
+		var stats map[string]interface{}
+
+		if udpProxy, ok := proxy.(*UDPProxy); ok {
+			stats = udpProxy.GetStatsByIP(clientIP)
+		} else if tcpProxy, ok := proxy.(*TCPProxy); ok {
+			stats = tcpProxy.GetStatsByIP(clientIP)
+		}
+
+		if stats != nil {
+			if sessions, ok := stats["active_sessions"].(int); ok && sessions > 0 {
+				stats["service_id"] = serviceID
+				services = append(services, stats)
+				totalSessions += sessions
+			}
+
+			if pktsRx, ok := stats["packets_received"].(int64); ok {
+				totalPacketsRx += pktsRx
+			}
+			if pktsTx, ok := stats["packets_sent"].(int64); ok {
+				totalPacketsTx += pktsTx
+			}
+			if rx, ok := stats["bytes_received"].(int64); ok {
+				totalBytesRx += rx
+			}
+			if tx, ok := stats["bytes_sent"].(int64); ok {
+				totalBytesTx += tx
+			}
+		}
+	}
+
+	aggregated["total_packets_received"] = totalPacketsRx
+	aggregated["total_packets_sent"] = totalPacketsTx
+	aggregated["total_bytes_received"] = totalBytesRx
+	aggregated["total_bytes_sent"] = totalBytesTx
+	aggregated["total_sessions"] = totalSessions
+	aggregated["services"] = services
+
+	return aggregated
+}
+
 // Reload stops all existing proxies and restarts them with new config
 func (m *Manager) Reload() error {
 	log.Info().Msg("Reloading proxy manager with new configuration")

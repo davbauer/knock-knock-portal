@@ -6,6 +6,47 @@ export interface Session {
 	created_at: string;
 	expires_at: string;
 	allowed_services: string[];
+	total_packets_rx: number;
+	total_packets_tx: number;
+	total_bytes_rx: number;
+	total_bytes_tx: number;
+	total_sessions: number;
+	ip_stats: IPStats[];
+}
+
+export interface Connection {
+	ip: string;
+	username: string;
+	user_id: string;
+	authenticated: boolean;
+	allowed_services: string[];
+	total_packets_rx: number;
+	total_packets_tx: number;
+	total_bytes_rx: number;
+	total_bytes_tx: number;
+	total_sessions: number;
+	services: ServiceStats[];
+}
+
+export interface ServiceStats {
+	service_id: string;
+	protocol: string;
+	packets_received: number;
+	packets_sent: number;
+	bytes_received: number;
+	bytes_sent: number;
+	active_sessions: number;
+}
+
+export interface IPStats {
+	ip: string;
+	protocol: string;
+	packets_received: number;
+	packets_sent: number;
+	bytes_received: number;
+	bytes_sent: number;
+	active_sessions: number;
+	service_id: string;
 }
 
 export interface Config {

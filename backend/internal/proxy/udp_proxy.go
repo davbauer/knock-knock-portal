@@ -35,8 +35,12 @@ type udpSession struct {
 	backendConn      *net.UDPConn
 	backendAddr      *net.UDPAddr // Expected backend address for validation
 	lastActivity     time.Time
-	spoofAttempts    int32 // Counter for spoof detection
-	maxSpoofAttempts int32 // Maximum allowed spoof attempts before termination
+	spoofAttempts    int32  // Counter for spoof detection
+	maxSpoofAttempts int32  // Maximum allowed spoof attempts before termination
+	packetsReceived  int64  // Total packets received from client
+	packetsSent      int64  // Total packets sent to client
+	bytesReceived    int64  // Total bytes received from client
+	bytesSent        int64  // Total bytes sent to client
 	mu               sync.Mutex
 }
 
@@ -223,17 +227,33 @@ func (p *UDPProxy) getOrCreateSession(clientAddr *net.UDPAddr) (*udpSession, err
 
 // forwardToBackend sends a packet to the backend
 func (p *UDPProxy) forwardToBackend(session *udpSession, data []byte) {
+	if session == nil || len(data) == 0 {
+		return
+	}
+
 	session.mu.Lock()
 	conn := session.backendConn
 	session.mu.Unlock()
 
-	_, err := conn.Write(data)
+	if conn == nil {
+		log.Error().
+			Str("client_addr", session.clientAddr.String()).
+			Msg("Backend connection is nil, cannot forward packet")
+		return
+	}
+
+	n, err := conn.Write(data)
 	if err != nil {
 		log.Error().
 			Err(err).
 			Str("client_addr", session.clientAddr.String()).
 			Msg("Failed to forward UDP packet to backend")
+		return
 	}
+
+	// Track stats atomically
+	atomic.AddInt64(&session.packetsReceived, 1)
+	atomic.AddInt64(&session.bytesReceived, int64(n))
 }
 
 // receiveFromBackend receives responses from the backend and forwards to client
@@ -313,12 +333,16 @@ func (p *UDPProxy) receiveFromBackend(ctx context.Context, session *udpSession) 
 		session.mu.Unlock()
 
 		// Forward response to client
-		_, err = p.conn.WriteToUDP(buffer[:n], session.clientAddr)
+		written, err := p.conn.WriteToUDP(buffer[:n], session.clientAddr)
 		if err != nil {
 			log.Error().
 				Err(err).
 				Str("client_addr", session.clientAddr.String()).
 				Msg("Failed to forward UDP packet to client")
+		} else {
+			// Track stats
+			atomic.AddInt64(&session.packetsSent, 1)
+			atomic.AddInt64(&session.bytesSent, int64(written))
 		}
 	}
 }
@@ -373,9 +397,74 @@ func (p *UDPProxy) cleanupExpiredSessions() {
 	p.sessionsMu.Unlock()
 
 	log.Debug().
-		Int("expired_count", len(expired)).
-		Str("service", p.service.ServiceName).
-		Msg("UDP session cleanup completed")
+	Int("expired_count", len(expired)).
+	Str("service", p.service.ServiceName).
+	Msg("UDP session cleanup completed")
+}
+
+// TerminateSessionsByIP closes all UDP sessions for a specific IP address
+func (p *UDPProxy) TerminateSessionsByIP(clientIP string) int {
+	p.sessionsMu.Lock()
+	defer p.sessionsMu.Unlock()
+
+	terminated := 0
+
+	// Safely iterate and terminate matching sessions
+	for key, session := range p.sessions {
+		if session != nil && session.clientAddr.IP.String() == clientIP {
+			// Close backend connection
+			if session.backendConn != nil {
+				session.backendConn.Close()
+			}
+			// Remove from map
+			delete(p.sessions, key)
+			terminated++
+
+			log.Debug().
+				Str("client_ip", clientIP).
+				Str("session_key", key).
+				Str("service", p.service.ServiceName).
+				Msg("Terminated UDP session for IP")
+		}
+	}
+
+	return terminated
+}
+
+// GetStatsByIP returns statistics for a specific client IP
+func (p *UDPProxy) GetStatsByIP(clientIP string) map[string]interface{} {
+	stats := map[string]interface{}{
+		"protocol":         "udp",
+		"packets_received": int64(0),
+		"packets_sent":     int64(0),
+		"bytes_received":   int64(0),
+		"bytes_sent":       int64(0),
+		"active_sessions":  0, // Renamed from "sessions" for consistency
+	}
+
+	p.sessionsMu.RLock()
+	defer p.sessionsMu.RUnlock()
+
+	sessionCount := 0
+	var totalPacketsRx, totalPacketsTx, totalBytesRx, totalBytesTx int64
+
+	for _, session := range p.sessions {
+		if session.clientAddr.IP.String() == clientIP {
+			sessionCount++
+			totalPacketsRx += atomic.LoadInt64(&session.packetsReceived)
+			totalPacketsTx += atomic.LoadInt64(&session.packetsSent)
+			totalBytesRx += atomic.LoadInt64(&session.bytesReceived)
+			totalBytesTx += atomic.LoadInt64(&session.bytesSent)
+		}
+	}
+
+	stats["active_sessions"] = sessionCount
+	stats["packets_received"] = totalPacketsRx
+	stats["packets_sent"] = totalPacketsTx
+	stats["bytes_received"] = totalBytesRx
+	stats["bytes_sent"] = totalBytesTx
+
+	return stats
 }
 
 // Stop gracefully shuts down the proxy

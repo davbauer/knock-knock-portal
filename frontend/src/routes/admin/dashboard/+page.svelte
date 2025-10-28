@@ -1,11 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { slide } from 'svelte/transition';
 	import {
 		Users,
-		UserX,
 		Settings,
 		LogOut,
 		Shield,
@@ -17,34 +16,36 @@
 		Download,
 		Upload,
 		Copy,
-		CircleCheck,
-		CircleAlert,
-		TriangleAlert,
-		Info
+		Network
 	} from 'lucide-svelte';
 	import { API_BASE_URL } from '$lib/config';
 	import { Tabs, Dialog, Field, Toast, Toaster } from '@ark-ui/svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import type { Session, Config } from './types';
+	import type { Session, Config, Connection } from './types';
 	import ConfigUsers from './ConfigUsers.svelte';
 	import ConfigProtectedServices from './ConfigProtectedServices.svelte';
 	import ConfigAdvanced from './ConfigAdvanced.svelte';
+	import ActiveConnections from './ActiveConnections.svelte';
+	import ActiveUsers from './ActiveUsers.svelte';
 	import { configStore } from './configStore.svelte';
 	import { toaster } from './toastStore.svelte';
+
+	let refreshInterval: number | null = null;
 
 	let sessions = $state<Session[]>([]);
 	let isLoadingSessions = $state(true);
 	let sessionsError = $state('');
 
+	let connections = $state<Connection[]>([]);
+	let isLoadingConnections = $state(true);
+	let connectionsError = $state('');
+
 	let showImportDialog = $state(false);
 	let importJsonText = $state('');
 	let importError = $state('');
 
-	let showTerminateDialog = $state(false);
-	let sessionToTerminate = $state<Session | null>(null);
-
 	// Get initial tabs from URL or defaults
-	let currentMainTab = $state($page.url.searchParams.get('tab') || 'sessions');
+	let currentMainTab = $state($page.url.searchParams.get('tab') || 'connections');
 	let currentConfigTab = $state($page.url.searchParams.get('config_tab') || 'users');
 
 	// Update URL when tabs change
@@ -58,6 +59,31 @@
 			url.searchParams.set('config_tab', currentConfigTab);
 		}
 		goto(url.toString(), { replaceState: true, noScroll: true });
+		
+		// Fetch data when switching tabs and setup auto-refresh
+		setupAutoRefresh(tab);
+	}
+
+	function setupAutoRefresh(tab: string) {
+		// Clear existing interval
+		if (refreshInterval) {
+			clearInterval(refreshInterval);
+			refreshInterval = null;
+		}
+
+		if (tab === 'connections') {
+			fetchConnections();
+			// Auto-refresh every 5 seconds for connections
+			refreshInterval = window.setInterval(() => {
+				fetchConnections();
+			}, 5000);
+		} else if (tab === 'users') {
+			fetchSessions();
+			// Auto-refresh every 5 seconds for users
+			refreshInterval = window.setInterval(() => {
+				fetchSessions();
+			}, 5000);
+		}
 	}
 
 	function updateConfigTab(tab: string) {
@@ -77,7 +103,7 @@
 
 		isLoadingSessions = true;
 		try {
-			const response = await fetch(`${API_BASE_URL}/api/admin/sessions`, {
+			const response = await fetch(`${API_BASE_URL}/api/admin/users`, {
 				headers: {
 					Authorization: `Bearer ${token}`
 				}
@@ -90,16 +116,52 @@
 			}
 
 			if (!response.ok) {
-				throw new Error('Failed to fetch sessions');
+				throw new Error('Failed to fetch active users');
 			}
 
 			const data = await response.json();
 			sessions = data.data.sessions || [];
 			sessionsError = '';
 		} catch (err) {
-			sessionsError = err instanceof Error ? err.message : 'Failed to load sessions';
+			sessionsError = err instanceof Error ? err.message : 'Failed to load active users';
 		} finally {
 			isLoadingSessions = false;
+		}
+	}
+
+	async function fetchConnections() {
+		const token = localStorage.getItem('admin_token');
+
+		if (!token) {
+			goto('/admin');
+			return;
+		}
+
+		isLoadingConnections = true;
+		try {
+			const response = await fetch(`${API_BASE_URL}/api/admin/connections`, {
+				headers: {
+					Authorization: `Bearer ${token}`
+				}
+			});
+
+			if (response.status === 401) {
+				localStorage.removeItem('admin_token');
+				goto('/admin');
+				return;
+			}
+
+			if (!response.ok) {
+				throw new Error('Failed to fetch connections');
+			}
+
+			const data = await response.json();
+			connections = data.data.connections || [];
+			connectionsError = '';
+		} catch (err) {
+			connectionsError = err instanceof Error ? err.message : 'Failed to load connections';
+		} finally {
+			isLoadingConnections = false;
 		}
 	}
 
@@ -228,7 +290,7 @@
 		}
 	}
 
-	async function terminateSession(sessionId: string) {
+	async function terminateSession(session: Session) {
 		const token = localStorage.getItem('admin_token');
 		if (!token) {
 			goto('/admin');
@@ -236,7 +298,7 @@
 		}
 
 		try {
-			const response = await fetch(`${API_BASE_URL}/api/admin/sessions/${sessionId}`, {
+			const response = await fetch(`${API_BASE_URL}/api/admin/users/${session.session_id}`, {
 				method: 'DELETE',
 				headers: {
 					Authorization: `Bearer ${token}`
@@ -250,16 +312,13 @@
 			}
 
 			if (!response.ok) {
-				throw new Error('Failed to terminate session');
+				throw new Error('Failed to terminate user session');
 			}
 
 			toaster.success({
-				title: 'Session Terminated',
-				description: 'The user session has been terminated successfully'
+				title: 'User Session Terminated',
+				description: `${session.username}'s session has been terminated successfully`
 			});
-
-			showTerminateDialog = false;
-			sessionToTerminate = null;
 
 			// Refresh the list
 			await fetchSessions();
@@ -301,9 +360,35 @@
 		return `${minutes}m`;
 	}
 
+	function formatBytes(bytes: number): string {
+		if (bytes === 0) return '0 B';
+		const k = 1024;
+		const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+		const i = Math.floor(Math.log(bytes) / Math.log(k));
+		return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+	}
+
+	function formatNumber(num: number): string {
+		if (num >= 1000000) {
+			return (num / 1000000).toFixed(1) + 'M';
+		} else if (num >= 1000) {
+			return (num / 1000).toFixed(1) + 'K';
+		}
+		return num.toString();
+	}
+
 	onMount(() => {
-		fetchSessions();
 		fetchConfig();
+		
+		// Setup auto-refresh for the active tab
+		setupAutoRefresh(currentMainTab);
+	});
+
+	onDestroy(() => {
+		// Clean up interval on component destroy
+		if (refreshInterval) {
+			clearInterval(refreshInterval);
+		}
 	});
 </script>
 
@@ -328,11 +413,18 @@
 		<Tabs.List class="border-border mb-6 border-b">
 			<div class="flex gap-2">
 				<Tabs.Trigger
-					value="sessions"
+					value="connections"
+					class="text-base-muted hover:text-base-content hover:border-border-hover data-selected:text-primary data-selected:border-primary flex items-center gap-2 border-b-2 border-transparent px-4 py-3 text-sm font-medium transition-colors"
+				>
+					<Network class="h-4 w-4" />
+					All Connections
+				</Tabs.Trigger>
+				<Tabs.Trigger
+					value="users"
 					class="text-base-muted hover:text-base-content hover:border-border-hover data-selected:text-primary data-selected:border-primary flex items-center gap-2 border-b-2 border-transparent px-4 py-3 text-sm font-medium transition-colors"
 				>
 					<Users class="h-4 w-4" />
-					Active Sessions
+					Active Users
 				</Tabs.Trigger>
 				<Tabs.Trigger
 					value="configuration"
@@ -344,14 +436,38 @@
 			</div>
 		</Tabs.List>
 
-		<!-- Sessions Tab -->
-		<Tabs.Content value="sessions">
+		<!-- All Connections Tab (First) -->
+		<Tabs.Content value="connections">
+			{#if isLoadingConnections}
+				<div class="border-border bg-base-100 rounded-2xl border p-16 text-center shadow-sm">
+					<div
+						class="border-primary mx-auto h-12 w-12 animate-spin rounded-full border-4 border-t-transparent"
+					></div>
+					<p class="text-base-content mt-4 font-medium">Loading connections...</p>
+				</div>
+			{:else if connectionsError}
+				<div class="border-error/30 bg-error/5 rounded-2xl border p-8">
+					<p class="text-error">{connectionsError}</p>
+					<button
+						onclick={fetchConnections}
+						class="bg-error hover:bg-error-hover mt-4 rounded-lg px-4 py-2 text-sm font-semibold text-white"
+					>
+						Retry
+					</button>
+				</div>
+			{:else}
+				<ActiveConnections {connections} onRefresh={fetchConnections} />
+			{/if}
+		</Tabs.Content>
+
+		<!-- Active Users Tab (Second) -->
+		<Tabs.Content value="users">
 			{#if isLoadingSessions}
 				<div class="border-border bg-base-100 rounded-2xl border p-16 text-center shadow-sm">
 					<div
 						class="border-primary mx-auto h-12 w-12 animate-spin rounded-full border-4 border-t-transparent"
 					></div>
-					<p class="text-base-content mt-4 font-medium">Loading sessions...</p>
+					<p class="text-base-content mt-4 font-medium">Loading active users...</p>
 				</div>
 			{:else if sessionsError}
 				<div class="border-error/30 bg-error/5 rounded-2xl border p-8">
@@ -363,132 +479,8 @@
 						Retry
 					</button>
 				</div>
-			{:else if sessions.length === 0}
-				<div class="border-border bg-base-100 rounded-xl border p-12 text-center">
-					<UserX class="text-base-muted mx-auto mb-4 h-12 w-12" />
-					<h3 class="text-base-content mb-2 text-lg font-semibold">No Active Sessions</h3>
-					<p class="text-base-muted text-sm">
-						There are currently no authenticated users with active sessions.
-					</p>
-					<button
-						onclick={fetchSessions}
-						class="bg-primary hover:bg-primary-hover mt-4 rounded-lg px-4 py-2 text-sm font-semibold text-white"
-					>
-						Refresh
-					</button>
-				</div>
 			{:else}
-				<div class="space-y-4">
-					<div class="flex items-center justify-between">
-						<p class="text-base-muted text-sm">
-							{sessions.length} active {sessions.length === 1 ? 'session' : 'sessions'}
-						</p>
-						<button
-							onclick={fetchSessions}
-							class="border-border bg-base-100 text-base-content hover:bg-base-200 rounded-lg border px-3 py-1.5 text-xs font-medium"
-						>
-							Refresh
-						</button>
-					</div>
-
-					<div class="border-border bg-base-100 overflow-hidden rounded-xl border shadow-sm">
-						<div class="overflow-x-auto">
-							<table class="w-full">
-								<thead class="bg-base-200 border-border border-b">
-									<tr>
-										<th
-											class="text-base-muted px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-										>
-											User
-										</th>
-										<th
-											class="text-base-muted px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-										>
-											IP Address
-										</th>
-										<th
-											class="text-base-muted px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-										>
-											Created
-										</th>
-										<th
-											class="text-base-muted px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-										>
-											Expires
-										</th>
-										<th
-											class="text-base-muted px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-										>
-											Time Left
-										</th>
-										<th
-											class="text-base-muted px-6 py-3 text-right text-xs font-medium uppercase tracking-wider"
-										>
-											Actions
-										</th>
-									</tr>
-								</thead>
-								<tbody class="divide-border divide-y">
-									{#each sessions as session}
-										<tr class="hover:bg-base-200 transition-colors">
-											<td class="whitespace-nowrap px-6 py-4">
-												<div class="flex items-center gap-3">
-													<div
-														class="bg-primary/10 flex h-10 w-10 items-center justify-center rounded-full"
-													>
-														<Users class="text-primary h-5 w-5" />
-													</div>
-													<div>
-														<div class="text-base-content text-sm font-medium">
-															{session.username}
-														</div>
-														<div class="text-base-muted font-mono text-xs">
-															{session.user_id.slice(0, 8)}...
-														</div>
-													</div>
-												</div>
-											</td>
-											<td class="whitespace-nowrap px-6 py-4">
-												<div class="text-base-content space-y-1 font-mono text-sm">
-													{#each session.authenticated_ips as ip}
-														<div class="flex items-center gap-2">
-															<span class="bg-base-300 rounded px-2 py-0.5">{ip}</span>
-														</div>
-													{/each}
-												</div>
-											</td>
-											<td class="whitespace-nowrap px-6 py-4">
-												<div class="text-base-content text-sm">
-													{formatDate(session.created_at)}
-												</div>
-											</td>
-											<td class="whitespace-nowrap px-6 py-4">
-												<div class="text-base-content text-sm">
-													{formatDate(session.expires_at)}
-												</div>
-											</td>
-											<td class="whitespace-nowrap px-6 py-4">
-												<span
-													class="bg-success/10 text-success inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
-												>
-													{getTimeRemaining(session.expires_at)}
-												</span>
-											</td>
-											<td class="whitespace-nowrap px-6 py-4 text-right">
-												<button
-													onclick={() => openTerminateDialog(session)}
-													class="bg-error/10 text-error hover:bg-error/20 focus:ring-error focus:ring-offset-base-100 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2"
-												>
-													Terminate
-												</button>
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					</div>
-				</div>
+				<ActiveUsers {sessions} onRefresh={fetchSessions} onTerminate={terminateSession} />
 			{/if}
 		</Tabs.Content>
 
@@ -701,56 +693,6 @@
 							Import Configuration
 						</button>
 					</div>
-				</div>
-			</Dialog.Content>
-		</Dialog.Positioner>
-	</Dialog.Root>
-{/if}
-
-<!-- Terminate Session Dialog -->
-{#if showTerminateDialog && sessionToTerminate}
-	<Dialog.Root
-		open={showTerminateDialog}
-		onOpenChange={(details) => {
-			if (!details.open) {
-				showTerminateDialog = false;
-				sessionToTerminate = null;
-			}
-		}}
-	>
-		<Dialog.Backdrop class="fixed inset-0 z-40 bg-black/50" />
-		<Dialog.Positioner class="fixed inset-0 z-50 flex items-center justify-center p-4">
-			<Dialog.Content class="bg-base-100 w-full max-w-md rounded-xl p-6 shadow-xl">
-				<Dialog.Title class="text-base-content mb-4 text-lg font-semibold">
-					Terminate Session
-				</Dialog.Title>
-
-				<p class="text-base-content mb-6 text-sm">
-					Are you sure you want to terminate the session for <strong
-						>{sessionToTerminate.username}</strong
-					>?
-					<br />
-					<span class="text-base-muted mt-2 block text-xs">
-						IP: {sessionToTerminate.authenticated_ip}
-					</span>
-				</p>
-
-				<div class="flex gap-3">
-					<button
-						onclick={() => {
-							showTerminateDialog = false;
-							sessionToTerminate = null;
-						}}
-						class="text-base-content bg-base-200 hover:bg-base-300 flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
-					>
-						Cancel
-					</button>
-					<button
-						onclick={() => terminateSession(sessionToTerminate!.session_id)}
-						class="bg-error hover:bg-error-hover flex-1 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors"
-					>
-						Terminate Session
-					</button>
 				</div>
 			</Dialog.Content>
 		</Dialog.Positioner>
