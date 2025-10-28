@@ -76,4 +76,5 @@ cd backend && go run cmd/server/main.go
 
 ## License
 
-MIT
+See the [LICENSE](LICENSE) file for full details.
+
