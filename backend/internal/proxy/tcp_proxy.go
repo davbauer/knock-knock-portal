@@ -202,7 +202,6 @@ func (p *TCPProxy) handleConnection(ctx context.Context, clientConn net.Conn) {
 		if len(p.connections[clientIPStr]) == 0 {
 			delete(p.connections, clientIPStr)
 		}
-		p.connectionsMu.Unlock()
 	}()
 
 	// Check circuit breaker
