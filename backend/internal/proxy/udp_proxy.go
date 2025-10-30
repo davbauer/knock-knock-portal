@@ -37,12 +37,14 @@ type udpSession struct {
 	backendConn      *net.UDPConn
 	backendAddr      *net.UDPAddr // Expected backend address for validation
 	lastActivity     time.Time
-	spoofAttempts    int32 // Counter for spoof detection
-	maxSpoofAttempts int32 // Maximum allowed spoof attempts before termination
-	packetsReceived  int64 // Total packets received from client
-	packetsSent      int64 // Total packets sent to client
-	bytesReceived    int64 // Total bytes received from client
-	bytesSent        int64 // Total bytes sent to client
+	spoofAttempts    int32  // Counter for spoof detection
+	maxSpoofAttempts int32  // Maximum allowed spoof attempts before termination
+	packetsReceived  int64  // Total packets received from client
+	packetsSent      int64  // Total packets sent to client
+	bytesReceived    int64  // Total bytes received from client
+	bytesSent        int64  // Total bytes sent to client
+	ctx              context.Context
+	cancel           context.CancelFunc
 	mu               sync.Mutex
 }
 
@@ -176,12 +178,12 @@ func (p *UDPProxy) receiveLoop() {
 	}
 }
 
-// getOrCreateSession retrieves or creates a UDP session
+// getOrCreateSession retrieves existing session or creates new one
 func (p *UDPProxy) getOrCreateSession(clientAddr *net.UDPAddr) (*udpSession, error) {
-	sessionKey := clientAddr.String()
+	key := clientAddr.String()
 
 	p.sessionsMu.RLock()
-	session, exists := p.sessions[sessionKey]
+	session, exists := p.sessions[key]
 	p.sessionsMu.RUnlock()
 
 	if exists {
@@ -191,49 +193,57 @@ func (p *UDPProxy) getOrCreateSession(clientAddr *net.UDPAddr) (*udpSession, err
 		return session, nil
 	}
 
-	// Check session limit before creating new session
+	// Rate limiting: Check session count per client IP
+	clientIP := clientAddr.IP.String()
 	p.sessionsMu.RLock()
-	currentSessions := int32(len(p.sessions))
+	ipSessionCount := 0
+	for _, s := range p.sessions {
+		if s.clientAddr.IP.String() == clientIP {
+			ipSessionCount++
+		}
+	}
 	p.sessionsMu.RUnlock()
-
-	if currentSessions >= p.maxSessions {
-		return nil, fmt.Errorf("maximum sessions (%d) reached", p.maxSessions)
+	
+	// Limit sessions per IP to prevent resource exhaustion
+	const maxSessionsPerIP = 10
+	if ipSessionCount >= maxSessionsPerIP {
+		return nil, fmt.Errorf("too many sessions from IP %s (%d active)", clientIP, ipSessionCount)
 	}
 
 	// Create new session
-	backendAddr := fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPort)
-	backendUDPAddr, err := net.ResolveUDPAddr("udp", backendAddr)
+	backendAddress := fmt.Sprintf("%s:%d", p.service.BackendTargetHost, p.service.BackendTargetPort)
+	backendAddr, err := net.ResolveUDPAddr("udp", backendAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve backend address: %w", err)
 	}
 
-	backendConn, err := net.DialUDP("udp", nil, backendUDPAddr)
+	backendConn, err := net.DialUDP("udp", nil, backendAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to backend: %w", err)
 	}
 
+	sessionCtx, sessionCancel := context.WithCancel(p.ctx)
 	session = &udpSession{
-		clientAddr:       clientAddr,
-		backendConn:      backendConn,
-		backendAddr:      backendUDPAddr,
-		lastActivity:     time.Now(),
-		spoofAttempts:    0,
-		maxSpoofAttempts: 5, // Terminate after 5 spoof attempts
+		clientAddr:        clientAddr,
+		backendAddr:       backendAddr,
+		backendConn:       backendConn,
+		lastActivity:      time.Now(),
+		maxSpoofAttempts:  3,
+		ctx:               sessionCtx,
+		cancel:            sessionCancel,
 	}
 
 	p.sessionsMu.Lock()
-	p.sessions[sessionKey] = session
+	p.sessions[key] = session
 	p.sessionsMu.Unlock()
 
 	log.Debug().
 		Str("client_addr", clientAddr.String()).
-		Str("backend_addr", backendAddr).
-		Str("service", p.service.ServiceName).
-		Int("active_sessions", int(currentSessions)+1).
-		Msg("Created UDP session")
+		Str("backend_addr", backendAddr.String()).
+		Msg("Created new UDP session")
 
-	// Start receiving responses from backend with context
-	go p.receiveFromBackend(p.ctx, session)
+	// Start goroutine to receive from backend
+	go p.receiveFromBackend(session)
 
 	return session, nil
 }
@@ -270,14 +280,15 @@ func (p *UDPProxy) forwardToBackend(session *udpSession, data []byte) {
 }
 
 // receiveFromBackend receives responses from the backend and forwards to client
-func (p *UDPProxy) receiveFromBackend(ctx context.Context, session *udpSession) {
+func (p *UDPProxy) receiveFromBackend(session *udpSession) {
 	bufPtr := getUDPBuffer()
 	defer putUDPBuffer(bufPtr)
 	buffer := *bufPtr
 
 	for {
+		// Check session context first for immediate cancellation
 		select {
-		case <-ctx.Done():
+		case <-session.ctx.Done():
 			return
 		default:
 		}
@@ -287,20 +298,32 @@ func (p *UDPProxy) receiveFromBackend(ctx context.Context, session *udpSession) 
 		expectedBackend := session.backendAddr
 		session.mu.Unlock()
 
-		// Set read deadline
+		// Set read deadline to allow context cancellation
 		conn.SetReadDeadline(time.Now().Add(p.sessionTimeout))
 
 		n, addr, err := conn.ReadFromUDP(buffer)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				// Session timed out, will be cleaned up
+				// Check if context was cancelled during timeout
+				select {
+				case <-session.ctx.Done():
+					return
+				default:
+					// Session timed out naturally, will be cleaned up
+					return
+				}
+			}
+			// Check if cancelled
+			select {
+			case <-session.ctx.Done():
+				return
+			default:
+				log.Error().
+					Err(err).
+					Str("client_addr", session.clientAddr.String()).
+					Msg("Failed to read from backend")
 				return
 			}
-			log.Error().
-				Err(err).
-				Str("client_addr", session.clientAddr.String()).
-				Msg("Failed to read from backend")
-			return
 		}
 
 		// SECURITY: Validate response is from expected backend to prevent amplification attacks
@@ -324,7 +347,10 @@ func (p *UDPProxy) receiveFromBackend(ctx context.Context, session *udpSession) 
 					Int32("spoof_attempts", attempts).
 					Msg("Maximum spoof attempts reached - terminating UDP session for security")
 
-				// Close backend connection to terminate the session
+				// Cancel session context and close connection
+				if session.cancel != nil {
+					session.cancel()
+				}
 				session.mu.Lock()
 				session.backendConn.Close()
 				session.mu.Unlock()
@@ -345,8 +371,12 @@ func (p *UDPProxy) receiveFromBackend(ctx context.Context, session *udpSession) 
 		session.lastActivity = time.Now()
 		session.mu.Unlock()
 
+		// Copy response data to avoid buffer reuse race
+		responseData := make([]byte, n)
+		copy(responseData, buffer[:n])
+
 		// Forward response to client
-		written, err := p.conn.WriteToUDP(buffer[:n], session.clientAddr)
+		written, err := p.conn.WriteToUDP(responseData, session.clientAddr)
 		if err != nil {
 			log.Error().
 				Err(err).
@@ -385,10 +415,12 @@ func (p *UDPProxy) cleanupExpiredSessions() {
 	p.sessionsMu.RLock()
 	for key, session := range p.sessions {
 		session.mu.Lock()
-		if now.Sub(session.lastActivity) > p.sessionTimeout {
+		lastActivity := session.lastActivity
+		session.mu.Unlock()
+		
+		if now.Sub(lastActivity) > p.sessionTimeout {
 			expired = append(expired, key)
 		}
-		session.mu.Unlock()
 	}
 	p.sessionsMu.RUnlock()
 
@@ -399,7 +431,16 @@ func (p *UDPProxy) cleanupExpiredSessions() {
 	p.sessionsMu.Lock()
 	for _, key := range expired {
 		if session, exists := p.sessions[key]; exists {
+			// Cancel session context to stop receiveFromBackend goroutine
+			if session.cancel != nil {
+				session.cancel()
+			}
+			
+			// Close connection after cancelling context
+			session.mu.Lock()
 			session.backendConn.Close()
+			session.mu.Unlock()
+			
 			delete(p.sessions, key)
 			log.Debug().
 				Str("client_addr", key).
@@ -415,30 +456,42 @@ func (p *UDPProxy) cleanupExpiredSessions() {
 		Msg("UDP session cleanup completed")
 }
 
-// TerminateSessionsByIP closes all UDP sessions for a specific IP address
-func (p *UDPProxy) TerminateSessionsByIP(clientIP string) int {
-	p.sessionsMu.Lock()
-	defer p.sessionsMu.Unlock()
-
+// TerminateSessionsByIP terminates all UDP sessions from a specific IP address
+func (p *UDPProxy) TerminateSessionsByIP(ipAddr string) int {
 	terminated := 0
-
-	// Safely iterate and terminate matching sessions
+	
+	// First pass: collect sessions to terminate without holding lock during Close()
+	var sessionsToTerminate []*udpSession
+	p.sessionsMu.Lock()
 	for key, session := range p.sessions {
-		if session != nil && session.clientAddr.IP.String() == clientIP {
-			// Close backend connection
-			if session.backendConn != nil {
-				session.backendConn.Close()
-			}
-			// Remove from map
+		clientIP := session.clientAddr.IP.String()
+		if clientIP == ipAddr {
+			sessionsToTerminate = append(sessionsToTerminate, session)
 			delete(p.sessions, key)
 			terminated++
-
-			log.Debug().
-				Str("client_ip", clientIP).
-				Str("session_key", key).
-				Str("service", p.service.ServiceName).
-				Msg("Terminated UDP session for IP")
 		}
+	}
+	p.sessionsMu.Unlock()
+	
+	// Second pass: cleanup sessions without holding lock
+	for _, session := range sessionsToTerminate {
+		// Cancel context to stop receiveFromBackend goroutine
+		if session.cancel != nil {
+			session.cancel()
+		}
+		
+		// Close connection after cancelling context
+		session.mu.Lock()
+		session.backendConn.Close()
+		session.mu.Unlock()
+	}
+
+	if terminated > 0 {
+		log.Info().
+			Str("ip_address", ipAddr).
+			Str("service", p.service.ServiceName).
+			Int("sessions_terminated", terminated).
+			Msg("Terminated UDP sessions for IP address")
 	}
 
 	return terminated
@@ -536,32 +589,7 @@ func (p *UDPProxy) GetStats() map[string]interface{} {
 }
 
 // TerminateConnectionsByIP forcefully closes all active UDP sessions from a specific IP
+// This is an alias for TerminateSessionsByIP for API consistency
 func (p *UDPProxy) TerminateConnectionsByIP(clientIP string) int {
-	p.sessionsMu.Lock()
-	defer p.sessionsMu.Unlock()
-
-	terminated := 0
-
-	// Find and close all sessions for this IP
-	for sessionKey, session := range p.sessions {
-		if session.clientAddr.IP.String() == clientIP {
-			// Close the backend connection
-			if session.backendConn != nil {
-				session.backendConn.Close()
-			}
-			// Remove from sessions map
-			delete(p.sessions, sessionKey)
-			terminated++
-		}
-	}
-
-	if terminated > 0 {
-		log.Info().
-			Str("service", p.service.ServiceName).
-			Str("client_ip", clientIP).
-			Int("terminated_count", terminated).
-			Msg("Terminated UDP sessions for IP")
-	}
-
-	return terminated
+	return p.TerminateSessionsByIP(clientIP)
 }

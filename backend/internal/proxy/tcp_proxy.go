@@ -158,6 +158,12 @@ func (p *TCPProxy) handleConnection(ctx context.Context, clientConn net.Conn) {
 		return
 	}
 
+	// Set TCP keepalive for connection health monitoring
+	if tcpConn, ok := clientConn.(*net.TCPConn); ok {
+		tcpConn.SetKeepAlive(true)
+		tcpConn.SetKeepAlivePeriod(30 * time.Second)
+	}
+
 	// Create connection-specific context for instant termination
 	connCtx, connCancel := context.WithCancel(ctx)
 	defer connCancel()
@@ -228,6 +234,12 @@ func (p *TCPProxy) handleConnection(ctx context.Context, clientConn net.Conn) {
 	}
 	defer backendConn.Close()
 
+	// Set TCP keepalive on backend connection
+	if tcpConn, ok := backendConn.(*net.TCPConn); ok {
+		tcpConn.SetKeepAlive(true)
+		tcpConn.SetKeepAlivePeriod(30 * time.Second)
+	}
+
 	// Record success
 	p.circuitBreaker.RecordSuccess()
 
@@ -243,58 +255,93 @@ func (p *TCPProxy) handleConnection(ctx context.Context, clientConn net.Conn) {
 	connID := p.connCount
 	p.mu.Unlock()
 
-	// Bidirectional copy with context awareness and buffer pooling
-	errChan := make(chan error, 2)
-	done := make(chan struct{})
-
 	// Get buffers from pool
 	clientToBackendBuf := getTCPBuffer()
 	backendToClientBuf := getTCPBuffer()
-	defer putTCPBuffer(clientToBackendBuf)
-	defer putTCPBuffer(backendToClientBuf)
 
+	// Bidirectional copy with proper goroutine coordination
+	clientToBackendDone := make(chan error, 1)
+	backendToClientDone := make(chan error, 1)
+
+	// Client -> Backend copy
 	go func() {
 		_, err := copyWithStats(backendConn, clientConn, *clientToBackendBuf, &conn.bytesFromClient, &conn.packetsFromClient)
-		errChan <- err
+		clientToBackendDone <- err
 	}()
 
+	// Backend -> Client copy
 	go func() {
 		_, err := copyWithStats(clientConn, backendConn, *backendToClientBuf, &conn.bytesToClient, &conn.packetsToClient)
-		errChan <- err
+		backendToClientDone <- err
 	}()
 
-	// Wait for either direction to close or context cancellation
-	go func() {
-		<-errChan
-		close(done)
-	}()
-
+	// Wait for completion or cancellation
+	var copyErr error
 	select {
-	case <-done:
-		// Normal completion - one direction finished
+	case err := <-clientToBackendDone:
+		copyErr = err
+		// Signal other direction to stop by setting deadline
+		clientConn.SetDeadline(time.Now())
+		backendConn.SetDeadline(time.Now())
+		<-backendToClientDone
+	case err := <-backendToClientDone:
+		copyErr = err
+		// Signal other direction to stop by setting deadline
+		clientConn.SetDeadline(time.Now())
+		backendConn.SetDeadline(time.Now())
+		<-clientToBackendDone
 	case <-connCtx.Done():
 		// Connection cancelled (instant termination via TerminateSessionsByIP)
+		clientConn.SetDeadline(time.Now())
+		backendConn.SetDeadline(time.Now())
+		<-clientToBackendDone
+		<-backendToClientDone
 		log.Info().
 			Int64("conn_id", connID).
 			Str("client_ip", clientIPStr).
 			Str("service", p.service.ServiceName).
 			Msg("TCP connection terminated instantly (session deleted)")
+		// Return buffers after goroutines complete
+		putTCPBuffer(clientToBackendBuf)
+		putTCPBuffer(backendToClientBuf)
 		return
 	case <-ctx.Done():
 		// Context cancelled - graceful shutdown
+		clientConn.SetDeadline(time.Now())
+		backendConn.SetDeadline(time.Now())
+		<-clientToBackendDone
+		<-backendToClientDone
 		log.Debug().
 			Int64("conn_id", connID).
 			Str("client_ip", clientIPStr).
 			Str("service", p.service.ServiceName).
 			Msg("TCP connection cancelled due to shutdown")
+		// Return buffers after goroutines complete
+		putTCPBuffer(clientToBackendBuf)
+		putTCPBuffer(backendToClientBuf)
 		return
 	}
 
-	log.Debug().
-		Int64("conn_id", connID).
-		Str("client_ip", clientIPStr).
-		Str("service", p.service.ServiceName).
-		Msg("TCP connection closed")
+	// Return buffers after goroutines complete
+	putTCPBuffer(clientToBackendBuf)
+	putTCPBuffer(backendToClientBuf)
+
+	// Record circuit breaker result based on copy errors
+	if copyErr != nil && copyErr != io.EOF {
+		p.circuitBreaker.RecordFailure()
+		log.Debug().
+			Err(copyErr).
+			Int64("conn_id", connID).
+			Str("client_ip", clientIPStr).
+			Str("service", p.service.ServiceName).
+			Msg("TCP connection closed with error")
+	} else {
+		log.Debug().
+			Int64("conn_id", connID).
+			Str("client_ip", clientIPStr).
+			Str("service", p.service.ServiceName).
+			Msg("TCP connection closed normally")
+	}
 }
 
 // TerminateSessionsByIP closes all TCP connections for a specific IP address
@@ -410,17 +457,21 @@ func (p *TCPProxy) Stop() error {
 
 // GetStats returns proxy statistics
 func (p *TCPProxy) GetStats() map[string]interface{} {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	// Collect unique client IPs from active connections
+	// Collect client IPs with proper lock
+	p.connectionsMu.RLock()
 	clientIPs := make([]string, 0, len(p.connections))
 	for clientIP := range p.connections {
 		clientIPs = append(clientIPs, clientIP)
 	}
+	p.connectionsMu.RUnlock()
+
+	// Get connection count with proper lock
+	p.mu.Lock()
+	connCount := p.connCount
+	p.mu.Unlock()
 
 	stats := map[string]interface{}{
-		"total_connections":  p.connCount,
+		"total_connections":  connCount,
 		"active_connections": atomic.LoadInt32(&p.activeConnCount),
 		"client_ips":         clientIPs,
 		"max_connections":    p.maxConns,
@@ -487,24 +538,25 @@ func copyWithStats(dst io.Writer, src io.Reader, buf []byte, bytesCounter, packe
 				}
 			}
 			written += int64(nw)
+			
+			// Update total bytes transferred atomically
+			atomic.AddInt64(bytesCounter, int64(nw))
+			
 			if ew != nil {
-				err = ew
-				break
+				// Write error - terminate immediately
+				return written, ew
 			}
 			if nr != nw {
-				err = io.ErrShortWrite
-				break
+				return written, io.ErrShortWrite
 			}
 		}
 		if er != nil {
-			if er != io.EOF {
-				err = er
+			// EOF is a clean close, return nil error
+			if er == io.EOF {
+				return written, nil
 			}
-			break
+			// Any other error is a real error
+			return written, er
 		}
 	}
-
-	// Update total bytes transferred atomically
-	atomic.AddInt64(bytesCounter, written)
-	return written, err
 }
